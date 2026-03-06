@@ -5,6 +5,8 @@ GET  /webhook → Verificación de Meta (hub.verify_token)
 POST /webhook → Recepción de mensajes entrantes
 """
 
+from __future__ import annotations
+
 import hashlib
 import hmac
 from typing import Any

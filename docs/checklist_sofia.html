@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bot Sofia STICK — Checklist v2</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, sans-serif; background: #0f1117; color: #e1e4e8; min-height: 100vh; }
+  .header { background: linear-gradient(135deg, #1a1d27 0%, #252836 100%); border-bottom: 1px solid #2d3148; padding: 24px 32px; position: sticky; top: 0; z-index: 100; }
+  .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+  .header h1 { font-size: 22px; font-weight: 700; color: #fff; }
+  .header h1 span { color: #8b5cf6; }
+  .header h1 .v2 { font-size: 12px; background: #8b5cf6; color: #fff; padding: 2px 8px; border-radius: 4px; vertical-align: middle; margin-left: 8px; }
+  .header-stats { display: flex; gap: 20px; font-size: 13px; color: #8b92a0; }
+  .header-stats strong { color: #e1e4e8; font-weight: 600; }
+  .progress-bar-container { background: #1a1d27; border-radius: 8px; height: 10px; overflow: hidden; }
+  .progress-bar-fill { height: 100%; border-radius: 8px; background: linear-gradient(90deg, #8b5cf6 0%, #6d28d9 100%); transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+  .container { max-width: 900px; margin: 0 auto; padding: 24px 16px 60px; }
+  .arch-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #8b92a0; background: #1a1d27; border: 1px solid #2d3148; border-radius: 6px; padding: 4px 10px; margin-bottom: 16px; }
+  .arch-badge span { color: #8b5cf6; font-weight: 600; }
+  .phase { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; margin-bottom: 12px; overflow: hidden; transition: border-color 0.2s; }
+  .phase:hover { border-color: #3d4168; }
+  .phase-header { display: flex; align-items: center; padding: 16px 20px; cursor: pointer; user-select: none; gap: 14px; }
+  .phase-header:hover { background: #1e2130; }
+  .phase-chevron { width: 20px; height: 20px; color: #6b7280; transition: transform 0.25s ease; flex-shrink: 0; }
+  .phase.open .phase-chevron { transform: rotate(90deg); }
+  .phase-number { font-size: 12px; font-weight: 700; color: #fff; background: #8b5cf6; width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .phase-info { flex: 1; min-width: 0; }
+  .phase-title { font-size: 15px; font-weight: 600; color: #fff; }
+  .phase-subtitle { font-size: 12px; color: #6b7280; margin-top: 2px; }
+  .phase-progress { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .phase-progress-bar { width: 80px; height: 6px; background: #252836; border-radius: 3px; overflow: hidden; }
+  .phase-progress-fill { height: 100%; border-radius: 3px; background: #8b5cf6; transition: width 0.4s ease; }
+  .phase-progress-text { font-size: 12px; font-weight: 600; color: #8b92a0; min-width: 36px; text-align: right; }
+  .phase-complete .phase-number { background: #22c55e; }
+  .phase-complete .phase-progress-fill { background: #22c55e; }
+  .phase-complete .phase-progress-text { color: #22c55e; }
+  .phase-body { display: none; padding: 0 20px 16px; }
+  .phase.open .phase-body { display: block; }
+  .task-group { margin-bottom: 12px; }
+  .task-parent { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 8px; background: #252836; cursor: pointer; transition: background 0.15s; }
+  .task-parent:hover { background: #2a2e42; }
+  .task-checkbox { width: 20px; height: 20px; border: 2px solid #4b5068; border-radius: 5px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-top: 1px; transition: all 0.15s; cursor: pointer; }
+  .task-checkbox.checked { background: #8b5cf6; border-color: #8b5cf6; }
+  .task-checkbox.partial { background: transparent; border-color: #8b5cf6; }
+  .task-checkbox svg { display: none; width: 12px; height: 12px; color: #fff; }
+  .task-checkbox.checked svg.check-icon { display: block; }
+  .task-checkbox.partial svg.minus-icon { display: block; }
+  .task-code { font-size: 11px; font-weight: 700; color: #8b5cf6; background: #8b5cf620; padding: 2px 7px; border-radius: 4px; flex-shrink: 0; margin-top: 2px; }
+  .task-label { font-size: 14px; font-weight: 500; color: #e1e4e8; flex: 1; line-height: 1.4; transition: all 0.15s; }
+  .task-parent.done .task-label { color: #6b7280; text-decoration: line-through; }
+  .task-count { font-size: 11px; color: #6b7280; flex-shrink: 0; margin-top: 3px; }
+  .subtasks { margin-left: 42px; margin-top: 4px; display: none; }
+  .task-group.expanded .subtasks { display: block; }
+  .subtask { display: flex; align-items: flex-start; gap: 10px; padding: 7px 12px; border-radius: 6px; cursor: pointer; transition: background 0.1s; }
+  .subtask:hover { background: #252836; }
+  .subtask-checkbox { width: 16px; height: 16px; border: 2px solid #4b5068; border-radius: 4px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-top: 2px; transition: all 0.15s; cursor: pointer; }
+  .subtask-checkbox.checked { background: #22c55e; border-color: #22c55e; }
+  .subtask-checkbox svg { display: none; width: 10px; height: 10px; color: #fff; }
+  .subtask-checkbox.checked svg { display: block; }
+  .subtask-label { font-size: 13px; color: #c0c4cc; flex: 1; line-height: 1.4; transition: all 0.15s; }
+  .subtask.done .subtask-label { color: #555; text-decoration: line-through; }
+  .expand-btn { font-size: 11px; color: #8b5cf6; background: none; border: none; cursor: pointer; padding: 4px 0; margin-left: 42px; margin-top: 2px; font-family: inherit; }
+  .expand-btn:hover { text-decoration: underline; }
+  .actions-bar { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .actions-bar button { font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500; padding: 8px 16px; border-radius: 8px; border: 1px solid #2d3148; background: #1a1d27; color: #e1e4e8; cursor: pointer; transition: all 0.15s; }
+  .actions-bar button:hover { background: #252836; border-color: #8b5cf6; }
+  .actions-bar button.danger { color: #ef4444; border-color: #3b1c1c; }
+  .actions-bar button.danger:hover { background: #2a1515; border-color: #ef4444; }
+  .search-box { font-family: 'Inter', sans-serif; font-size: 13px; padding: 8px 14px; border-radius: 8px; border: 1px solid #2d3148; background: #1a1d27; color: #e1e4e8; outline: none; flex: 1; min-width: 200px; transition: border-color 0.15s; }
+  .search-box:focus { border-color: #8b5cf6; }
+  .search-box::placeholder { color: #4b5068; }
+  @media (max-width: 640px) { .header { padding: 16px; } .container { padding: 16px 10px; } .phase-header { padding: 12px 14px; } .phase-progress-bar { width: 50px; } .header-stats { flex-wrap: wrap; gap: 10px; } }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-top">
+    <h1>Bot <span>Sofia</span> — Checklist<span class="v2">v2</span></h1>
+    <div class="header-stats">
+      <span>Completado: <strong id="global-done">0</strong> / <strong id="global-total">0</strong></span>
+      <span>Progreso: <strong id="global-pct">0%</strong></span>
+    </div>
+  </div>
+  <div class="progress-bar-container">
+    <div class="progress-bar-fill" id="global-bar" style="width: 0%"></div>
+  </div>
+</div>
+<div class="container">
+  <div class="arch-badge">Stack: <span>Python (FastAPI)</span> + <span>React (Next.js)</span> + <span>PostgreSQL</span> + <span>Claude API</span> + <span>AppSheet</span></div>
+  <div class="actions-bar">
+    <input type="text" class="search-box" id="search" placeholder="Buscar tarea...">
+    <button onclick="expandAll()">Expandir todo</button>
+    <button onclick="collapseAll()">Colapsar todo</button>
+    <button onclick="exportData()">Exportar</button>
+    <button onclick="importData()">Importar</button>
+    <button class="danger" onclick="resetAll()">Resetear</button>
+  </div>
+  <div id="phases"></div>
+</div>
+<script>
+const DATA = [
+  {
+    id:"f0", phase:0, title:"Infraestructura Base", subtitle:"Semana 1-2",
+    tasks:[
+      {id:"0.1", label:"Configurar WhatsApp Business API", subs:[
+        "Registrar numero de telefono en Meta Business",
+        "Verificar negocio en Meta Business Manager",
+        "Obtener token permanente de acceso",
+        "Configurar webhook URL apuntando al backend"
+      ]},
+      {id:"0.2", label:"Setup proyecto Python (FastAPI)", subs:[
+        "Crear estructura del proyecto (src/, tests/, config/)",
+        "Instalar dependencias: fastapi, uvicorn, anthropic, httpx, sqlalchemy, apscheduler",
+        "Configurar variables de entorno (.env): API keys, DB URL, etc.",
+        "Setup Docker + docker-compose para desarrollo local",
+        "Configurar logging estructurado"
+      ]},
+      {id:"0.3", label:"Configurar PostgreSQL", subs:[
+        "Instalar/configurar PostgreSQL (local o cloud)",
+        "Disenar schema: conversaciones, mensajes, estados de flujo",
+        "Crear migraciones con Alembic",
+        "Testear conexion desde FastAPI"
+      ]},
+      {id:"0.4", label:"Configurar credenciales externas", subs:[
+        "AppSheet API Key",
+        "Google Sheets service account (Franco.json)",
+        "Claude API Key (Anthropic)",
+        "WhatsApp Business API Token"
+      ]},
+      {id:"0.5", label:"Crear Google Sheet \"Tareas Pendientes WhatsApp\"", subs:[
+        "Crear spreadsheet con columnas documentadas (A-L)",
+        "Configurar dropdowns: Tipo, Prioridad, Estado",
+        "Compartir con service account (Franco.json)",
+        "Verificar acceso desde Python (gspread o google-api-python-client)"
+      ]},
+      {id:"0.6", label:"Test de conectividad end-to-end", subs:[
+        "Recibir webhook de WhatsApp en FastAPI",
+        "Llamar AppSheet API y recibir datos",
+        "Llamar Claude API y recibir respuesta",
+        "Enviar respuesta hardcodeada de vuelta por WhatsApp",
+        "Verificar ciclo completo: mensaje -> proceso -> respuesta"
+      ]}
+    ]
+  },
+  {
+    id:"f1", phase:1, title:"Backend Core: Identificacion + IA", subtitle:"Semana 3-5",
+    tasks:[
+      {id:"1.1", label:"Webhook handler de WhatsApp", subs:[
+        "Endpoint POST /webhook para recibir mensajes",
+        "Endpoint GET /webhook para verificacion de Meta",
+        "Validar firma del webhook (X-Hub-Signature)",
+        "Parsear tipos de mensaje: texto, imagen, audio, documento, ubicacion",
+        "Procesamiento asincrono (background tasks o queue)"
+      ]},
+      {id:"1.2", label:"Modulo AppSheet API (cliente reutilizable)", subs:[
+        "Clase AppSheetClient con metodos Find, Add, Edit, Delete",
+        "Parametrizable por tabla (Pacientes, Sesiones, Pagos, etc.)",
+        "Manejo de rate limits (~45s entre requests)",
+        "Formato de fechas MM/DD/YYYY automatico",
+        "Manejo de errores: 200 con body vacio = rate limited",
+        "Properties: {} (sin Locale, causa respuestas vacias)"
+      ]},
+      {id:"1.3", label:"Identificar contacto", subs:[
+        "Extraer telefono del mensaje (formato +5491112345678)",
+        "Buscar en BBDD Pacientes via AppSheet",
+        "Si no existe, buscar en BBDD Leads",
+        "Si no existe en ninguna, marcar como contacto nuevo",
+        "Armar objeto de contexto con datos del contacto"
+      ]},
+      {id:"1.4", label:"Integrar Claude AI con Tool Calling", subs:[
+        "Configurar Anthropic SDK (anthropic python package)",
+        "Cargar system prompt v2.0 (sofia_system_prompt.md)",
+        "Cargar base de tratamientos (tratamientos_stick.md)",
+        "Definir tools: buscar_paciente, buscar_turno, agendar_turno, buscar_disponibilidad, registrar_pago, consultar_tarifario, crear_tarea, etc.",
+        "Manejar tool_use responses: ejecutar accion real y devolver resultado",
+        "Loop de tool calling hasta respuesta final al paciente",
+        "Enviar contexto: datos paciente + historial + mensaje actual"
+      ]},
+      {id:"1.5", label:"Memoria conversacional (PostgreSQL)", subs:[
+        "Tabla conversations: id, phone, patient_id, created_at, updated_at",
+        "Tabla messages: id, conversation_id, role, content, timestamp",
+        "Almacenar cada mensaje entrante y saliente",
+        "Recuperar ultimos N mensajes como contexto para Claude",
+        "TTL configurable para limpiar conversaciones viejas"
+      ]},
+      {id:"1.6", label:"Envio de mensajes WhatsApp", subs:[
+        "Funcion enviar texto (WhatsApp Cloud API)",
+        "Funcion enviar imagen/documento (media upload + send)",
+        "Funcion enviar template messages (para recordatorios)",
+        "Manejo de rate limits y reintentos",
+        "Logging de cada mensaje enviado"
+      ]},
+      {id:"1.7", label:"Deteccion de numeros admin", subs:[
+        "Detectar si viene de 1123266671 (Franco) o 5491171342438 (Cynthia)",
+        "Cambiar modo de respuesta: directo y operativo",
+        "Parsear ordenes del admin (cobrar, enviar facturas, etc.)"
+      ]},
+      {id:"1.8", label:"Tests unitarios del core", subs:[
+        "Tests de webhook handler (payloads reales de Meta)",
+        "Tests de AppSheetClient (mocked)",
+        "Tests de identificacion de contacto",
+        "Tests de integracion con Claude (mocked)",
+        "Tests de envio de mensajes (mocked)",
+        "CI pipeline basico"
+      ]}
+    ]
+  },
+  {
+    id:"f2", phase:2, title:"Modulo Turnos", subtitle:"Semana 6-8",
+    tasks:[
+      {id:"2.1", label:"Consultar horarios de atencion", subs:[
+        "Tool: consultar_horarios -> leer O-HORARIOS DE ATENCION via AppSheet",
+        "Parsear horarios por dia y profesional",
+        "Cache en memoria con TTL (no consultar en cada mensaje)"
+      ]},
+      {id:"2.2", label:"Buscar disponibilidad", subs:[
+        "Tool: buscar_disponibilidad(dia_preferido, horario_preferido)",
+        "Leer BBDD Sesiones proximas 3 semanas",
+        "Cruzar horarios de atencion vs turnos ocupados",
+        "Filtrar por preferencia del paciente",
+        "Retornar 2-3 opciones disponibles"
+      ]},
+      {id:"2.3", label:"Agendar turno estandar", subs:[
+        "Tool: agendar_turno(paciente, fecha, hora, tratamiento, profesional)",
+        "Claude maneja el flujo conversacional (preguntar, ofrecer, confirmar)",
+        "Crear turno en BBDD Sesiones via AppSheet (Add)",
+        "Payload: Paciente, Fecha MM/DD/YYYY, Hora, Tratamiento, Profesional, Estado=Planificada",
+        "Respuesta con confirmacion: fecha, hora, profesional, direccion"
+      ]},
+      {id:"2.4", label:"Agendar turno de urgencia", subs:[
+        "Tool: buscar_urgencia() -> turnos libres esta semana",
+        "NO preguntar disponibilidad, ofrecer directo",
+        "Tipo de turno: Urgencia, Observaciones: descripcion breve",
+        "Si no hay opciones: crear tarea en GSheet tipo Urgencia, prioridad Alta"
+      ]},
+      {id:"2.5", label:"Reprogramar turno", subs:[
+        "Tool: buscar_turno_paciente(paciente_id) -> turno actual",
+        "Tool: modificar_turno(turno_id, nueva_fecha, nueva_hora, profesional)",
+        "Buscar opciones en proximas 2 semanas",
+        "Si no hay opciones: crear tarea en GSheet tipo Reprogramacion"
+      ]},
+      {id:"2.6", label:"Cancelar turno", subs:[
+        "Tool: cancelar_turno(turno_id) -> estado = Cancelada",
+        "Claude confirma con el paciente antes de ejecutar",
+        "Preguntar si quiere reagendar"
+      ]},
+      {id:"2.7", label:"Regla miercoles Dra. Ana Mino", subs:[
+        "Logica en buscar_disponibilidad: si cae Mi 14:30-20:00 -> profesional = Ana Mino",
+        "Informar al paciente con quien se atiende"
+      ]},
+      {id:"2.8", label:"Turnos que NO se agendan directamente", subs:[
+        "Endodoncia -> crear tarea Coordinacion Endodoncia + avisar paciente",
+        "Implantes -> crear tarea Coordinacion Implantes + avisar paciente",
+        "Cirugia -> crear tarea Coordinacion Cirugia + avisar paciente",
+        "Tool: crear_tarea_coordinacion(tipo, paciente, contexto)"
+      ]},
+      {id:"2.9", label:"Regla pacientes nuevos", subs:[
+        "Todo paciente nuevo -> tipo = Odontologia primera vez",
+        "Anotar motivo real en campo Observaciones"
+      ]}
+    ]
+  },
+  {
+    id:"f3", phase:3, title:"Conversion Lead -> Paciente", subtitle:"Semana 9-10",
+    tasks:[
+      {id:"3.1", label:"Registro de leads nuevos", subs:[
+        "Detectar contacto desconocido (no esta en Pacientes ni Leads)",
+        "Claude pregunta nombre y motivo",
+        "Tool: crear_lead(nombre, telefono, canal, motivo)",
+        "Campos: Nombre, Telefono, Canal=WhatsApp, Estado=Primera Consulta"
+      ]},
+      {id:"3.2", label:"Flujo primera vez completo", subs:[
+        "Paso 1: Acordar fecha y horario (flujo turnos)",
+        "Paso 2: Enviar bloque informativo completo en UN mensaje",
+        "Tool: consultar_tarifario(tratamiento) para valor consulta y sena",
+        "Incluir alias ODONTO.CYNTHIA para transferir",
+        "Solicitar datos: nombre completo, DNI, fecha nacimiento, mail, referido"
+      ]},
+      {id:"3.3", label:"Crear paciente en BBDD Pacientes", subs:[
+        "Tool: crear_paciente(nombre, dni, fecha_nac, telefono, mail, referido)",
+        "Validar que se recibieron todos los datos",
+        "SIEMPRE crear paciente ANTES de crear turno (dependencia)"
+      ]},
+      {id:"3.4", label:"Registrar sena — Escenario A (datos sin sena)", subs:[
+        "Crear paciente",
+        "Crear turno con Falta sena en Observaciones",
+        "Cuando confirme sena -> Tool: registrar_pago(tipo=SENA)",
+        "Quitar Falta sena de Observaciones del turno"
+      ]},
+      {id:"3.5", label:"Registrar sena — Escenario B (datos + comprobante juntos)", subs:[
+        "Crear paciente",
+        "Registrar pago en BBDD Pagos (Tipo=SENA)",
+        "Crear turno (sin Falta sena)",
+        "Enviar confirmacion final con fecha, hora, direccion"
+      ]},
+      {id:"3.6", label:"Consultar BBDD Tarifario", subs:[
+        "Tool: consultar_tarifario(tratamiento) -> precio, sena",
+        "NUNCA hardcodear valores",
+        "Cache con TTL corto (precios pueden cambiar)"
+      ]}
+    ]
+  },
+  {
+    id:"f4", phase:4, title:"Precios, Pagos y Cobros", subtitle:"Semana 11-13",
+    tasks:[
+      {id:"4.1", label:"Informar precios de tratamientos", subs:[
+        "Tool: consultar_tarifario para precio actualizado",
+        "Si ya venia consultando: dar precio directo",
+        "Si pregunta de entrada: explicar brevemente + dar precio",
+        "Regla descuentos: solo 10% efectivo y 2 cuotas para Alineadores, Brackets, Blanqueamiento",
+        "Resto de tratamientos: NO mencionar descuentos"
+      ]},
+      {id:"4.2", label:"Informar saldo pendiente", subs:[
+        "Tool: consultar_saldo(paciente_id) -> BBDD Presupuestos -> Saldo Pendiente",
+        "NO usar BBDD Pacientes para saldo",
+        "Si multiples presupuestos activos: preguntar sobre cual"
+      ]},
+      {id:"4.3", label:"Leer comprobantes de transferencia (Claude Vision)", subs:[
+        "Detectar imagen recibida en el webhook",
+        "Descargar media de WhatsApp API",
+        "Enviar imagen a Claude con prompt de extraccion: monto, fecha, operacion",
+        "Confirmar al paciente lo leido",
+        "Incluir numero de operacion en Observaciones del pago"
+      ]},
+      {id:"4.4", label:"Regla anti-duplicado de pagos", subs:[
+        "Antes de registrar: Tool buscar_pago(paciente, fecha, monto, metodo)",
+        "Si ya existe: responder que ya esta registrado",
+        "Si NO existe: crear registro nuevo"
+      ]},
+      {id:"4.5", label:"Registrar pago", subs:[
+        "Tool: registrar_pago(paciente_id, fecha, monto, metodo, estado, tipo, observaciones)",
+        "Add en BBDD Pagos via AppSheet"
+      ]},
+      {id:"4.6", label:"Cobro por orden admin", subs:[
+        "Detectar orden de cobro desde numero admin",
+        "Buscar paciente + validar saldo en BBDD Presupuestos",
+        "Enviar mensaje amable con monto + alias ODONTO.CYNTHIA",
+        "Si no responde en 48hs: segundo mensaje breve",
+        "Si no responde: informar al admin. NUNCA tercer intento",
+        "Palabra PROHIBIDA: deuda -> usar saldo pendiente"
+      ]},
+      {id:"4.7", label:"Manejo de objeciones de precio", subs:[
+        "Es muy caro: validar -> reencuadrar -> mostrar valor -> alternativa",
+        "No tengo tiempo: enfatizar controles minimos",
+        "Miedo de que no quede bien: simulacion digital + evaluacion previa",
+        "Lo tengo que pensar: respetar, ofrecer material",
+        "Compara con competencia: diferencial STICK sin hablar mal"
+      ]}
+    ]
+  },
+  {
+    id:"f5", phase:5, title:"Recordatorios y Automatizaciones", subtitle:"Semana 14-15",
+    tasks:[
+      {id:"5.1", label:"Setup APScheduler (cron jobs en Python)", subs:[
+        "Integrar APScheduler con FastAPI",
+        "Configurar timezone Argentina (America/Buenos_Aires)",
+        "Logging de cada job ejecutado",
+        "Manejo de errores sin crashear el scheduler"
+      ]},
+      {id:"5.2", label:"Cron: Recordatorio de turnos (dia anterior)", subs:[
+        "Job diario (ej: 10:00 AM)",
+        "Consultar BBDD Sesiones: turnos de manana con estado Planificada",
+        "Enviar mensaje con formato exacto: nombre, fecha, hora, profesional",
+        "Solicitar respuesta: SI para confirmar, NO para cancelar"
+      ]},
+      {id:"5.3", label:"Flujo de respuesta SI/NO a recordatorio", subs:[
+        "SI -> cambiar estado a Confirmada en BBDD Sesiones",
+        "SI -> verificar campo CONSGEN FIRMADO en BBDD Pacientes",
+        "Si CONSGEN = OK: no pedir nada mas",
+        "Si CONSGEN = NO: calcular edad, enviar link Tally (mayor/menor 18)",
+        "SI -> confirmar: Te esperamos manana en Virrey del Pino 4191 3C",
+        "NO -> preguntar si quiere reprogramar",
+        "NO + quiere reprogramar -> buscar opciones 2 semanas -> modificar turno",
+        "NO + no quiere reprogramar -> cancelar turno"
+      ]},
+      {id:"5.4", label:"Cron: Recordatorio cambio alineadores", subs:[
+        "Filtrar pacientes ESTADO TRATAMIENTO = EN CURSO en BBDD Alineadores",
+        "Verificar ultimo turno Realizada Y proximo turno Planificada/Confirmada",
+        "22-26 dias (ciclo corto): recordatorio a los 12 dias",
+        "27-34 dias (ciclo estandar): recordatorio a los 15 dias",
+        "+34 dias (ciclo largo): cada 15 dias",
+        "Enviar mensaje de cambio (sin numero de alineador)",
+        "Si reporta attache/tope suelto o alineador roto: pedir foto + tarea GSheet Alta",
+        "Si reporta dolor/molestia: escalar a humano"
+      ]},
+      {id:"5.5", label:"Alerta admin: paciente EN CURSO sin proximo turno", subs:[
+        "Detectar pacientes EN CURSO sin turno Planificada/Confirmada",
+        "Enviar alerta a admin por WhatsApp",
+        "Si admin indica que finalizo -> cambiar ESTADO TRATAMIENTO a FINALIZADO"
+      ]},
+      {id:"5.6", label:"Cron: Seguimiento de leads", subs:[
+        "Filtrar leads que consultaron pero no agendaron",
+        "3 dias sin respuesta: 1er mensaje de seguimiento",
+        "7 dias sin respuesta: 2do mensaje (ultimo)",
+        "Si no responde a ninguno: cerrar como Cerrada Perdida",
+        "Si dice que no le interesa: cerrar inmediatamente",
+        "Si responde: cancelar seguimiento automatico"
+      ]},
+      {id:"5.7", label:"Protocolo de ghosting (pacientes existentes)", subs:[
+        "24hs sin respuesta durante conversacion: 1er mensaje suave",
+        "3 dias sin respuesta: 2do mensaje contextual",
+        "NUNCA mas de 2 mensajes sin respuesta"
+      ]}
+    ]
+  },
+  {
+    id:"f6", phase:6, title:"Panel Admin (Frontend)", subtitle:"Semana 16-18",
+    tasks:[
+      {id:"6.1", label:"Setup proyecto frontend", subs:[
+        "Crear proyecto Next.js + React + TypeScript",
+        "Configurar Tailwind CSS",
+        "Estructura de carpetas: pages/, components/, hooks/, services/",
+        "Auth con JWT (login Franco y Cynthia)",
+        "Conectar con FastAPI backend (API client)"
+      ]},
+      {id:"6.2", label:"Backend: endpoints API para el panel", subs:[
+        "GET /api/conversations -> lista de conversaciones activas",
+        "GET /api/conversations/:id/messages -> thread de mensajes",
+        "POST /api/conversations/:id/send -> enviar mensaje como humano",
+        "POST /api/conversations/:id/takeover -> tomar control",
+        "POST /api/conversations/:id/release -> devolver a Sofia",
+        "GET /api/patients/:id -> datos completos del paciente",
+        "GET /api/tasks -> lista de tareas pendientes",
+        "PATCH /api/tasks/:id -> actualizar tarea (resolver, notas)",
+        "WebSocket /ws -> stream de mensajes en tiempo real"
+      ]},
+      {id:"6.3", label:"Vista de conversaciones (sidebar)", subs:[
+        "Lista de conversaciones activas con ultimo mensaje",
+        "Indicadores visuales: nuevo, escalado, sin respuesta, humano activo",
+        "Filtros: todas, escaladas, activas, resueltas",
+        "Busqueda por nombre de paciente",
+        "Ordenar por ultimo mensaje / prioridad"
+      ]},
+      {id:"6.4", label:"Vista de chat (centro)", subs:[
+        "Thread de mensajes estilo WhatsApp",
+        "Diferencia visual: mensajes de Sofia vs paciente vs humano",
+        "Timestamps y estado (enviado, entregado, leido)",
+        "Real-time via WebSocket (mensajes nuevos aparecen solos)",
+        "Scroll infinito / paginacion del historial",
+        "Mostrar acciones de Sofia: turno agendado, pago registrado, etc."
+      ]},
+      {id:"6.5", label:"Sidebar datos del paciente (derecha)", subs:[
+        "Datos de BBDD Pacientes: nombre, DNI, telefono, email",
+        "Proximo turno (fecha, hora, tratamiento, profesional)",
+        "Saldo pendiente (de BBDD Presupuestos)",
+        "Tratamiento activo (BBDD Alineadores si aplica)",
+        "Historial de turnos recientes",
+        "Historial de pagos recientes",
+        "Link rapido al perfil en AppSheet"
+      ]},
+      {id:"6.6", label:"Takeover humano", subs:[
+        "Boton Tomar conversacion -> marcar como humano activo",
+        "Input de texto para escribir como humano (se envia por WhatsApp)",
+        "Sofia deja de responder mientras humano esta activo",
+        "Boton Devolver a Sofia -> Sofia retoma",
+        "Indicador visual claro de quien tiene el control"
+      ]},
+      {id:"6.7", label:"Panel de tareas pendientes", subs:[
+        "Lista de tareas de Google Sheet en el panel",
+        "Filtrar por tipo (Coordinacion, Urgencia, Factura, etc.)",
+        "Filtrar por prioridad y estado",
+        "Marcar como resuelta + agregar notas de resolucion",
+        "Crear tarea manual desde el panel"
+      ]},
+      {id:"6.8", label:"Notificaciones", subs:[
+        "Web Push para escalados y urgencias",
+        "Sonido para nuevos mensajes en conversacion activa",
+        "Badge counter de tareas pendientes y conversaciones escaladas",
+        "Notificacion por WhatsApp al admin si el panel esta cerrado (fallback)"
+      ]},
+      {id:"6.9", label:"Responsive + Mobile", subs:[
+        "Diseno responsive para tablet y mobile",
+        "Layout adaptable (sidebar colapsa en mobile)",
+        "Cynthia pueda usarlo desde el celular en el consultorio"
+      ]}
+    ]
+  },
+  {
+    id:"f7", phase:7, title:"Escalado y Facturacion", subtitle:"Semana 19-20",
+    tasks:[
+      {id:"7.1", label:"Sistema de escalado (sin Chatwoot)", subs:[
+        "Detectar triggers en Claude: queja, +2 msgs sin avanzar, caso clinico, pide persona",
+        "Tool: escalar_conversacion(motivo, resumen) -> marca en DB",
+        "Avisar al paciente: Te comunico con el equipo ahora mismo",
+        "Enviar notificacion push al panel admin",
+        "Enviar WhatsApp a admin como fallback",
+        "Sofia DEJA de responder (flag en DB: escalated=true)",
+        "Registrar en Google Sheet tareas pendientes"
+      ]},
+      {id:"7.2", label:"Re-engagement post-escalado", subs:[
+        "Cuando humano resuelve (via panel) -> flag escalated=false",
+        "Sofia retoma si el paciente vuelve a escribir",
+        "Si humano no resolvio: Sofia sigue sin responder"
+      ]},
+      {id:"7.3", label:"Consultas sin respuesta", subs:[
+        "Detectar que Sofia no puede responder (tecnica, clinica)",
+        "Registrar en GSheet: Consulta sin respuesta + pregunta exacta",
+        "Escalar via panel admin"
+      ]},
+      {id:"7.4", label:"Solicitud de factura por paciente", subs:[
+        "Claude recopila datos: nombre factura, CUIT/DNI, monto",
+        "NO preguntar descripcion (la escribe un humano)",
+        "Tool: crear_tarea(tipo=Factura pendiente, contexto=datos)",
+        "Confirmar al paciente: le paso los datos al equipo"
+      ]},
+      {id:"7.5", label:"Envio de facturas PDF (por orden admin)", subs:[
+        "Detectar orden de Franco o Cynthia",
+        "Leer Google Sheet F2-Facturas",
+        "Filtrar: Factura PDF=REALIZADA AND Envio=PENDIENTE",
+        "Para cada fila: obtener PDF + buscar telefono + enviar por WhatsApp",
+        "Actualizar Envio Factura PDF a ENVIADO",
+        "Responder al admin con resumen"
+      ]},
+      {id:"7.6", label:"Archivos y estudios recibidos", subs:[
+        "Detectar envio de fotos/archivos de estudios",
+        "NO interpretar radiografias ni estudios",
+        "Registrar en GSheet: Archivo/estudio recibido + contexto"
+      ]}
+    ]
+  },
+  {
+    id:"f8", phase:8, title:"Testing, Optimizacion y Go-Live", subtitle:"Semana 21-24",
+    tasks:[
+      {id:"8.1", label:"Testing con pacientes reales (piloto)", subs:[
+        "Seleccionar grupo piloto de 10-15 pacientes",
+        "Activar bot solo para ese grupo",
+        "Monitorear cada conversacion en el panel admin",
+        "Documentar errores, respuestas incorrectas, edge cases"
+      ]},
+      {id:"8.2", label:"Ajuste del system prompt", subs:[
+        "Revisar conversaciones del piloto",
+        "Identificar respuestas que no cumplen el tono esperado",
+        "Ajustar tools y prompt",
+        "Re-testear con casos reales"
+      ]},
+      {id:"8.3", label:"Optimizar costos Claude", subs:[
+        "Implementar prompt caching (reducir tokens repetitivos)",
+        "Ajustar cantidad de historial enviado como contexto",
+        "Monitorear tokens usados por conversacion",
+        "Evaluar si casos simples pueden resolverse sin IA (templates)"
+      ]},
+      {id:"8.4", label:"Metricas y dashboard", subs:[
+        "Conversaciones por dia",
+        "Tasa de resolucion sin humano",
+        "Cantidad de escalados",
+        "Turnos agendados por Sofia",
+        "Pagos registrados por Sofia",
+        "Tiempo promedio de respuesta",
+        "Costo diario/mensual de Claude API"
+      ]},
+      {id:"8.5", label:"Documentacion operativa", subs:[
+        "Guia para Franco/Cynthia: como usar el panel admin",
+        "Guia de troubleshooting: que hacer si el bot no responde",
+        "Procedimiento: actualizar precios, horarios, prompt",
+        "Runbook de deploy y mantenimiento"
+      ]},
+      {id:"8.6", label:"Go-live gradual", subs:[
+        "Semana 1: activar para 30% de pacientes",
+        "Semana 2: activar para 60% de pacientes",
+        "Semana 3: activar para 100% de pacientes",
+        "Monitorear panel admin en todo momento"
+      ]},
+      {id:"8.7", label:"Soporte post-lanzamiento", subs:[
+        "2 semanas de monitoreo intensivo post go-live",
+        "Ajustes rapidos segun feedback",
+        "Reunion semanal de revision con Franco/Cynthia",
+        "Documentar mejoras para proximas iteraciones"
+      ]}
+    ]
+  }
+];
+
+const STORAGE_KEY = "sofia_checklist_v2";
+function loadState() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; } }
+function saveState(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
+let state = loadState();
+function subKey(tid, si) { return `${tid}_s${si}`; }
+function isSubChecked(tid, si) { return !!state[subKey(tid, si)]; }
+function toggleSub(tid, si) { state[subKey(tid, si)] = !state[subKey(tid, si)]; saveState(state); render(); }
+function toggleAllSubs(tid, subs) { const all = subs.every((_, i) => isSubChecked(tid, i)); subs.forEach((_, i) => { state[subKey(tid, i)] = !all; }); saveState(state); render(); }
+function getTaskProgress(t) { const d = t.subs.filter((_, i) => isSubChecked(t.id, i)).length; return { done: d, total: t.subs.length }; }
+function getPhaseProgress(p) { let d = 0, t = 0; p.tasks.forEach(tk => { const pp = getTaskProgress(tk); d += pp.done; t += pp.total; }); return { done: d, total: t }; }
+function getGlobalProgress() { let d = 0, t = 0; DATA.forEach(p => { const pp = getPhaseProgress(p); d += pp.done; t += pp.total; }); return { done: d, total: t }; }
+const openPhases = new Set(), expandedTasks = new Set();
+function togglePhase(pid) { if (openPhases.has(pid)) openPhases.delete(pid); else openPhases.add(pid); render(); }
+function toggleTaskExpand(tid) { if (expandedTasks.has(tid)) expandedTasks.delete(tid); else expandedTasks.add(tid); render(); }
+function expandAll() { DATA.forEach(p => { openPhases.add(p.id); p.tasks.forEach(t => expandedTasks.add(t.id)); }); render(); }
+function collapseAll() { openPhases.clear(); expandedTasks.clear(); render(); }
+function resetAll() { if (!confirm("Seguro que queres resetear todo el progreso?")) return; state = {}; saveState(state); render(); }
+function exportData() { const b = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "sofia_checklist_v2_progreso.json"; a.click(); }
+function importData() { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = e => { const r = new FileReader(); r.onload = ev => { try { state = JSON.parse(ev.target.result); saveState(state); render(); } catch { alert("Archivo invalido"); } }; r.readAsText(e.target.files[0]); }; i.click(); }
+let searchTerm = "";
+document.getElementById("search").addEventListener("input", e => { searchTerm = e.target.value.toLowerCase(); render(); });
+function checkIcon() { return '<svg class="check-icon" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6l3 3 5-5"/></svg>'; }
+function minusIcon() { return '<svg class="minus-icon" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6h8"/></svg>'; }
+function chevronSvg() { return '<svg class="phase-chevron" viewBox="0 0 20 20" fill="currentColor"><path d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"/></svg>'; }
+function highlight(text) { if (!searchTerm) return text; const re = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'); return text.replace(re, '<mark style="background:#8b5cf640;color:#e1e4e8;border-radius:2px;padding:0 2px">$1</mark>'); }
+function render() {
+  const container = document.getElementById("phases");
+  const gp = getGlobalProgress();
+  document.getElementById("global-done").textContent = gp.done;
+  document.getElementById("global-total").textContent = gp.total;
+  const gPct = gp.total ? Math.round(gp.done / gp.total * 100) : 0;
+  document.getElementById("global-pct").textContent = gPct + "%";
+  document.getElementById("global-bar").style.width = gPct + "%";
+  let html = "";
+  DATA.forEach(phase => {
+    const pp = getPhaseProgress(phase);
+    const pPct = pp.total ? Math.round(pp.done / pp.total * 100) : 0;
+    const isOpen = openPhases.has(phase.id);
+    const isComplete = pp.done === pp.total;
+    const matchingTasks = searchTerm ? phase.tasks.filter(t => t.label.toLowerCase().includes(searchTerm) || t.subs.some(s => s.toLowerCase().includes(searchTerm))) : phase.tasks;
+    if (searchTerm && matchingTasks.length === 0) return;
+    const forceOpen = searchTerm && matchingTasks.length > 0;
+    html += `<div class="phase ${isOpen || forceOpen ? 'open' : ''} ${isComplete ? 'phase-complete' : ''}">`;
+    html += `<div class="phase-header" onclick="togglePhase('${phase.id}')">${chevronSvg()}<div class="phase-number">${phase.phase}</div><div class="phase-info"><div class="phase-title">${phase.title}</div><div class="phase-subtitle">${phase.subtitle}</div></div><div class="phase-progress"><div class="phase-progress-bar"><div class="phase-progress-fill" style="width:${pPct}%"></div></div><div class="phase-progress-text">${pp.done}/${pp.total}</div></div></div>`;
+    html += `<div class="phase-body">`;
+    matchingTasks.forEach(task => {
+      const tp = getTaskProgress(task);
+      const allDone = tp.done === tp.total;
+      const someDone = tp.done > 0 && !allDone;
+      const isExpanded = expandedTasks.has(task.id) || !!searchTerm;
+      html += `<div class="task-group ${isExpanded ? 'expanded' : ''}"><div class="task-parent ${allDone ? 'done' : ''}" onclick="toggleAllSubs('${task.id}', ${JSON.stringify(task.subs).replace(/"/g, '&quot;')})"><div class="task-checkbox ${allDone ? 'checked' : someDone ? 'partial' : ''}">${checkIcon()}${minusIcon()}</div><span class="task-code">${task.id}</span><span class="task-label">${highlight(task.label)}</span><span class="task-count">${tp.done}/${tp.total}</span></div>`;
+      html += `<button class="expand-btn" onclick="event.stopPropagation();toggleTaskExpand('${task.id}')">${isExpanded ? 'Ocultar detalle' : 'Ver detalle (' + task.subs.length + ')'}</button>`;
+      html += `<div class="subtasks">`;
+      task.subs.forEach((sub, i) => {
+        const checked = isSubChecked(task.id, i);
+        if (searchTerm && !sub.toLowerCase().includes(searchTerm) && !task.label.toLowerCase().includes(searchTerm)) return;
+        html += `<div class="subtask ${checked ? 'done' : ''}" onclick="toggleSub('${task.id}', ${i})"><div class="subtask-checkbox ${checked ? 'checked' : ''}">${checkIcon()}</div><span class="subtask-label">${highlight(sub)}</span></div>`;
+      });
+      html += `</div></div>`;
+    });
+    html += `</div></div>`;
+  });
+  container.innerHTML = html;
+}
+render();
+</script>
+</body>
+</html>
