@@ -46,6 +46,14 @@ def _get_client() -> anthropic.AsyncAnthropic:
     return _client
 
 
+async def close_client() -> None:
+    """Cierra el cliente Anthropic (llamar en shutdown)."""
+    global _client
+    if _client is not None:
+        await _client.close()
+        _client = None
+
+
 def _build_system_prompt(patient_context: Optional[dict] = None) -> str:
     """
     Construye el system prompt completo.

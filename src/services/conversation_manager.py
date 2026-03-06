@@ -100,11 +100,14 @@ class ConversationManager:
             wa_message_id=wa_message_id,
         )
 
-        # 4. Marcar como leído
+        # 4. Refrescar mensajes para que el historial incluya el recién guardado
+        await self.db.refresh(conversation, attribute_names=["messages"])
+
+        # 5. Marcar como leído
         if wa_message_id:
             await mark_as_read(wa_message_id)
 
-        # 5. Check estado de la conversación
+        # 6. Check estado de la conversación
         state = conversation.state
         if state and state.status != ConversationStatus.BOT_ACTIVE:
             logger.info(

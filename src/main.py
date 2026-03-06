@@ -48,7 +48,21 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
+    # Shutdown — cerrar todos los clientes
+    from src.clients.appsheet import shutdown_appsheet_client
+    from src.clients.whatsapp import close_client as close_whatsapp_client
+    from src.clients.claude_ai import close_client as close_claude_client
+
+    for name, closer in [
+        ("appsheet", shutdown_appsheet_client),
+        ("whatsapp", close_whatsapp_client),
+        ("claude", close_claude_client),
+    ]:
+        try:
+            await closer()
+        except Exception as e:
+            logger.warning(f"shutdown_{name}_error", error=str(e))
+
     if settings.database_url:
         try:
             db_engine = get_engine()

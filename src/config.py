@@ -1,10 +1,16 @@
 """
 Configuración central del proyecto usando pydantic-settings.
 Todas las variables se leen de .env o variables de entorno.
+
+Prioridad personalizada: .env > env vars del sistema.
+Esto es necesario porque Claude Code exporta ANTHROPIC_API_KEY=""
+que pisaba nuestro valor real del .env.
 """
 
+from __future__ import annotations
+
 from functools import lru_cache
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -16,6 +22,21 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """
+        .env tiene prioridad sobre variables de entorno del sistema.
+        Orden: init args > .env file > env vars > secrets files
+        """
+        return init_settings, dotenv_settings, env_settings, file_secret_settings
 
     # --- App ---
     environment: str = "development"
