@@ -63,16 +63,11 @@ CREAR_LEAD = {
         "properties": {
             "nombre": {
                 "type": "string",
-                "description": "Nombre del lead",
+                "description": "Nombre del lead (Apellido y Nombre)",
             },
             "telefono": {
                 "type": "string",
                 "description": "Teléfono WhatsApp",
-            },
-            "canal": {
-                "type": "string",
-                "description": "Canal de origen (ej: WhatsApp, Instagram, Referido)",
-                "default": "WhatsApp",
             },
             "motivo": {
                 "type": "string",
@@ -117,6 +112,11 @@ CREAR_PACIENTE = {
                 "type": "string",
                 "description": "Quién lo recomendó (o cómo nos encontró)",
                 "default": "",
+            },
+            "sexo": {
+                "type": "string",
+                "description": "Sexo del paciente (Masculino, Femenino, Otro)",
+                "default": "Otro",
             },
         },
         "required": ["nombre", "dni", "fecha_nacimiento", "telefono", "mail"],
@@ -193,7 +193,11 @@ AGENDAR_TURNO = {
         "properties": {
             "paciente_id": {
                 "type": "string",
-                "description": "ID del paciente en AppSheet",
+                "description": "ID del paciente en AppSheet (ej: ANT-15)",
+            },
+            "paciente_nombre": {
+                "type": "string",
+                "description": "Nombre completo del paciente (Apellido, Nombre)",
             },
             "fecha": {
                 "type": "string",
@@ -223,7 +227,10 @@ AGENDAR_TURNO = {
                 "default": "",
             },
         },
-        "required": ["paciente_id", "fecha", "hora", "tratamiento", "profesional"],
+        "required": [
+            "paciente_id", "paciente_nombre", "fecha", "hora",
+            "tratamiento", "profesional",
+        ],
     },
 }
 
@@ -385,7 +392,15 @@ REGISTRAR_PAGO = {
         "properties": {
             "paciente_id": {
                 "type": "string",
-                "description": "ID del paciente",
+                "description": "ID del paciente (ej: ANT-15)",
+            },
+            "paciente_nombre": {
+                "type": "string",
+                "description": "Nombre completo del paciente (Apellido, Nombre)",
+            },
+            "tratamiento": {
+                "type": "string",
+                "description": "Tratamiento asociado al pago (ej: Odontologia primera vez)",
             },
             "fecha": {
                 "type": "string",
@@ -395,13 +410,25 @@ REGISTRAR_PAGO = {
                 "type": "string",
                 "description": "Monto del pago",
             },
+            "moneda": {
+                "type": "string",
+                "description": "Moneda: PESOS o USD",
+                "default": "PESOS",
+            },
             "metodo_pago": {
                 "type": "string",
-                "description": "Método (Transferencia, Efectivo, MercadoPago, Tarjeta)",
+                "description": (
+                    "Método de pago: Efectivo, Transferencia, Mercado Pago, "
+                    "Tarjeta de Credito, Tarjeta de Debito"
+                ),
             },
             "tipo_pago": {
                 "type": "string",
-                "description": "Tipo (SEÑA, Cuota, Arancel, Pago total)",
+                "description": (
+                    "Tipo de pago: Seña, Arancel, Cuota, Implante, Endodoncia, "
+                    "Cirugia, Tratamiento Protesis, Blanqueamiento, "
+                    "Tratamiento ortodoncia, Tratamiento alineadores"
+                ),
             },
             "observaciones": {
                 "type": "string",
@@ -409,7 +436,10 @@ REGISTRAR_PAGO = {
                 "default": "",
             },
         },
-        "required": ["paciente_id", "fecha", "monto", "metodo_pago", "tipo_pago"],
+        "required": [
+            "paciente_id", "paciente_nombre", "tratamiento",
+            "fecha", "monto", "metodo_pago", "tipo_pago",
+        ],
     },
 }
 

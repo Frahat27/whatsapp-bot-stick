@@ -207,8 +207,8 @@ class ConversationManager:
             paciente = await self.appsheet.find_patient_by_phone(phone)
             if paciente:
                 conversation.contact_type = ContactType.PACIENTE
-                conversation.patient_id = paciente.get("_RowNumber", paciente.get("ID", ""))
-                conversation.patient_name = paciente.get("Nombre", "")
+                conversation.patient_id = paciente.get("ID Paciente", "")
+                conversation.patient_name = paciente.get("Paciente", "")
                 await self.db.flush()
 
                 context["tipo_contacto"] = "paciente"
@@ -221,8 +221,8 @@ class ConversationManager:
             lead = await self.appsheet.find_lead_by_phone(phone)
             if lead:
                 conversation.contact_type = ContactType.LEAD
-                conversation.lead_id = lead.get("_RowNumber", lead.get("ID", ""))
-                conversation.patient_name = lead.get("Nombre", "")
+                conversation.lead_id = lead.get("ID Lead", "")
+                conversation.patient_name = lead.get("Apellido y Nombre", "")
                 await self.db.flush()
 
                 context["tipo_contacto"] = "lead"
@@ -349,11 +349,12 @@ class ConversationManager:
 
     async def _tool_crear_lead(self, inp: dict) -> dict:
         row = {
-            "Nombre": inp["nombre"],
+            "Apellido y Nombre": inp["nombre"],
             "Telefono (Whatsapp)": inp["telefono"],
-            "Canal": inp.get("canal", "WhatsApp"),
-            "Motivo": inp.get("motivo", ""),
-            "Estado Lead": "Abierta",
+            "Fecha Creacion": to_appsheet_date(today_argentina()),
+            "Estado del Lead (Temp)": "Nuevo",
+            "Motivo Interes": inp.get("motivo", ""),
+            "Notas y Seguimientos": "Primer contacto via WhatsApp bot",
         }
         result = await self.appsheet.add("BBDD LEADS", [row])
         return {"status": "created", "lead": result[0] if result else row}
@@ -371,13 +372,15 @@ class ConversationManager:
             fecha_appsheet = fecha_nac
 
         row = {
-            "Nombre": inp["nombre"],
+            "Paciente": inp["nombre"],  # Formato: "Apellido, Nombre"
             "DNI / Pasaporte": inp["dni"],
             "Fecha Nacimiento": fecha_appsheet,
+            "Sexo": inp.get("sexo", "Otro"),
             "Telefono (Whatsapp)": inp["telefono"],
-            "Email": inp["mail"],
-            "Referido": inp.get("referido_por", ""),
+            "email": inp["mail"],
         }
+        if inp.get("referido_por"):
+            row["Referido"] = inp["referido_por"]
         result = await self.appsheet.add("BBDD PACIENTES", [row])
         return {"status": "created", "paciente": result[0] if result else row}
 
@@ -397,12 +400,12 @@ class ConversationManager:
         hoy = today_argentina()
         fecha_hasta = hoy + timedelta(weeks=semanas)
 
-        # Obtener turnos ocupados en el rango
+        # Obtener turnos ocupados en el rango (excluir cancelados)
         selector = (
-            f'Filter("BBDD SESIONES", '
-            f'AND([Fecha] >= "{to_appsheet_date(hoy)}", '
-            f'[Fecha] <= "{to_appsheet_date(fecha_hasta)}", '
-            f'OR([Estado Sesion] = "Planificada", [Estado Sesion] = "Confirmada")))'
+            f'Filter(BBDD SESIONES, '
+            f'AND([Fecha de Sesion] >= "{to_appsheet_date(hoy)}", '
+            f'[Fecha de Sesion] <= "{to_appsheet_date(fecha_hasta)}", '
+            f'[Estado de Sesion] <> "Cancelada"))'
         )
         turnos_ocupados = await self.appsheet.find("BBDD SESIONES", selector=selector)
 
@@ -430,25 +433,25 @@ class ConversationManager:
             fecha_appsheet = inp["fecha"]
 
         row = {
-            "Paciente": inp["paciente_id"],
-            "Fecha": fecha_appsheet,
-            "Hora": inp["hora"] + ":00" if len(inp["hora"]) <= 5 else inp["hora"],
+            "ID PACIENTE": inp["paciente_id"],
+            "Paciente": inp["paciente_nombre"],  # Required: "Apellido, Nombre"
             "Tratamiento": inp["tratamiento"],
-            "Profesional": inp["profesional"],
-            "Estado Sesion": "Planificada",
-            "Observaciones": inp.get("observaciones", ""),
+            "Fecha de Sesion": fecha_appsheet,
+            "Hora Sesion": inp["hora"],
+            "Profesional Asignado": inp["profesional"],
+            "Descripcion de la sesion": inp.get("observaciones", ""),
         }
+        # Estado de Sesion = "Planificada" se auto-genera en AppSheet
         result = await self.appsheet.add("BBDD SESIONES", [row])
         return {"status": "created", "turno": result[0] if result else row}
 
     async def _tool_buscar_turno_paciente(self, inp: dict) -> dict:
         paciente_id = inp["paciente_id"]
         selector = (
-            f'Filter("BBDD SESIONES", '
-            f'AND([Paciente] = "{paciente_id}", '
-            f'OR([Estado Sesion] = "Planificada", '
-            f'[Estado Sesion] = "Confirmada", '
-            f'[Estado Sesion] = "Realizada")))'
+            f'Filter(BBDD SESIONES, '
+            f'AND([ID PACIENTE] = "{paciente_id}", '
+            f'OR([Estado de Sesion] = "Planificada", '
+            f'[Estado de Sesion] = "Confirmada")))'
         )
         turnos = await self.appsheet.find("BBDD SESIONES", selector=selector)
         return {"status": "ok", "turnos": turnos}
@@ -463,18 +466,18 @@ class ConversationManager:
             fecha_appsheet = inp["nueva_fecha"]
 
         row = {
-            "_RowNumber": inp["turno_id"],
-            "Fecha": fecha_appsheet,
-            "Hora": inp["nueva_hora"] + ":00" if len(inp["nueva_hora"]) <= 5 else inp["nueva_hora"],
-            "Profesional": inp["profesional"],
+            "ID Sesion": inp["turno_id"],
+            "Fecha de Sesion": fecha_appsheet,
+            "Hora Sesion": inp["nueva_hora"],
+            "Profesional Asignado": inp["profesional"],
         }
         result = await self.appsheet.edit("BBDD SESIONES", [row])
         return {"status": "modified", "turno": result[0] if result else row}
 
     async def _tool_cancelar_turno(self, inp: dict) -> dict:
         row = {
-            "_RowNumber": inp["turno_id"],
-            "Estado Sesion": "Cancelada",
+            "ID Sesion": inp["turno_id"],
+            "Estado de Sesion": "Cancelada",
         }
         result = await self.appsheet.edit("BBDD SESIONES", [row])
         return {"status": "cancelled", "turno": result[0] if result else row}
@@ -482,8 +485,8 @@ class ConversationManager:
     async def _tool_consultar_tarifario(self, inp: dict) -> dict:
         tratamiento = inp["tratamiento"]
         selector = (
-            f'Filter("BBDD TARIFARIO", '
-            f'CONTAINS([Tratamiento], "{tratamiento}"))'
+            f'Filter(BBDD TARIFARIO, '
+            f'[Tratamiento Detalle] = "{tratamiento}")'
         )
         tarifas = await self.appsheet.find("BBDD TARIFARIO", selector=selector)
         if tarifas:
@@ -493,37 +496,46 @@ class ConversationManager:
     async def _tool_consultar_presupuesto(self, inp: dict) -> dict:
         paciente_id = inp["paciente_id"]
         selector = (
-            f'Filter("BBDD PRESUPUESTOS", '
-            f'[Paciente] = "{paciente_id}")'
+            f'Filter(BBDD PRESUPUESTOS, '
+            f'[ID Paciente] = "{paciente_id}")'
         )
         presupuestos = await self.appsheet.find("BBDD PRESUPUESTOS", selector=selector)
         return {"status": "ok", "presupuestos": presupuestos}
 
     async def _tool_buscar_pago(self, inp: dict) -> dict:
+        from datetime import datetime
+
         paciente_id = inp["paciente_id"]
         fecha = inp.get("fecha", "")
         monto = inp.get("monto", "")
+        metodo = inp.get("metodo_pago", "")
 
-        # Buscar pagos del paciente
-        selector = (
-            f'Filter("BBDD PAGOS", '
-            f'[ID Paciente] = "{paciente_id}")'
-        )
+        # Construir filtro preciso en AppSheet (no filtrar en Python)
+        conditions = [f'[ID PACIENTE] = "{paciente_id}"']
+        if fecha:
+            try:
+                dt = datetime.strptime(fecha, "%d/%m/%Y")
+                fecha_as = to_appsheet_date(dt.date())
+            except ValueError:
+                fecha_as = fecha
+            conditions.append(f'[Fecha del Pago] = "{fecha_as}"')
+        if monto:
+            conditions.append(f'[Monto Pagado] = {monto}')
+        if metodo:
+            conditions.append(f'[Metodo de Pago] = "{metodo}"')
+
+        if len(conditions) == 1:
+            filter_expr = conditions[0]
+        else:
+            filter_expr = "AND(" + ", ".join(conditions) + ")"
+
+        selector = f'Filter(BBDD PAGOS, {filter_expr})'
         pagos = await self.appsheet.find("BBDD PAGOS", selector=selector)
 
-        # Filtrar por fecha y monto si se proporcionaron
-        if pagos and (fecha or monto):
-            filtered = []
-            for p in pagos:
-                match_fecha = not fecha or fecha in str(p.get("Fecha", ""))
-                match_monto = not monto or str(monto) in str(p.get("Monto", ""))
-                if match_fecha and match_monto:
-                    filtered.append(p)
-            if filtered:
-                return {"status": "found", "pagos": filtered, "duplicado": True}
-
+        # Si buscaba con fecha+monto y encontró → es duplicado
+        duplicado = bool(pagos and fecha and monto)
         if pagos:
-            return {"status": "ok", "pagos": pagos, "duplicado": False}
+            return {"status": "found", "pagos": pagos, "duplicado": duplicado}
         return {"status": "not_found", "pagos": [], "duplicado": False}
 
     async def _tool_registrar_pago(self, inp: dict) -> dict:
@@ -537,12 +549,16 @@ class ConversationManager:
             fecha_appsheet = fecha
 
         row = {
-            "ID Paciente": inp["paciente_id"],
-            "Fecha": fecha_appsheet,
-            "Monto": inp["monto"],
+            "ID PACIENTE": inp["paciente_id"],
+            "Paciente": inp["paciente_nombre"],       # REQUIRED — "Apellido, Nombre"
+            "Tratamiento": inp["tratamiento"],          # REQUIRED — no se auto-pobla
+            "Fecha del Pago": fecha_appsheet,
+            "Monto Pagado": inp["monto"],
+            "Moneda": inp.get("moneda", "PESOS"),
             "Metodo de Pago": inp["metodo_pago"],
             "Tipo de Pago": inp["tipo_pago"],
             "Estado del Pago": "Confirmado",
+            "CUENTA": "CYNTHIA",                        # Siempre CYNTHIA
             "Observaciones": inp.get("observaciones", ""),
         }
         result = await self.appsheet.add("BBDD PAGOS", [row])
@@ -627,13 +643,15 @@ class ConversationManager:
 def _safe_patient_summary(paciente: dict) -> str:
     """Genera un resumen de los datos del paciente para el contexto de Claude."""
     fields = [
-        ("Nombre", "nombre"),
-        ("ID", "id"),
+        ("Paciente", "nombre"),
+        ("ID Paciente", "id"),
         ("DNI / Pasaporte", "dni"),
-        ("Email", "email"),
-        ("Estado Tratamiento", "estado_tratamiento"),
+        ("email", "email"),
+        ("Estado del Paciente", "estado"),
         ("Tratamiento", "tratamiento"),
         ("CONSGEN FIRMADO", "consentimiento"),
+        ("SALDO PEND", "saldo_pendiente"),
+        ("Proximo Turno", "proximo_turno"),
     ]
     parts = []
     for appsheet_key, label in fields:

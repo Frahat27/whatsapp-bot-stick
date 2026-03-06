@@ -175,7 +175,7 @@ class AppSheetClient:
             phone_10: Teléfono normalizado a 10 dígitos.
         """
         selector = (
-            f'Filter("{table}", '
+            f'Filter({table}, '
             f'CONTAINS([Telefono (Whatsapp)], "{phone_10}"))'
         )
         return await self.find(table, selector=selector)
