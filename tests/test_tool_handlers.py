@@ -86,7 +86,7 @@ class TestCrearLead:
 
         assert table == "BBDD LEADS"
         assert row["Apellido y Nombre"] == "García, Juan"
-        assert row["Telefono (Whatsapp)"] == "1198765432"
+        assert row["Telefono (Whatsapp)"] == "+5491198765432"
         assert row["Estado del Lead (Temp)"] == "Nuevo"
         assert row["Motivo Interes"] == "Consulta alineadores"
         assert "Fecha Creacion" in row
@@ -124,7 +124,7 @@ class TestCrearPaciente:
         # Fecha convertida a MM/DD/YYYY
         assert row["Fecha Nacimiento"] == "03/15/1990"
         assert row["Sexo"] == "Femenino"
-        assert row["Telefono (Whatsapp)"] == "1155667788"
+        assert row["Telefono (Whatsapp)"] == "+5491155667788"
         # email en minúscula
         assert row["email"] == "maria@test.com"
         # NO debe tener "Nombre" (campo incorrecto)
@@ -168,15 +168,31 @@ class TestConsultarHorarios:
 
 class TestBuscarDisponibilidad:
     async def test_filter_uses_correct_field_names(self, manager, mock_appsheet):
+        # Mock find: 3 llamadas ahora = sesiones, horarios, tipos de tratamiento
+        mock_appsheet.find = AsyncMock(side_effect=[
+            [],  # BBDD SESIONES — sin turnos ocupados
+            [    # LISTA O | HORARIOS DE ATENCION
+                {"DIA": "LUNES", "HORA INICIO": "08:30:00", "HORA CIERRE": "18:00:00"},
+                {"DIA": "MARTES", "HORA INICIO": "08:30:00", "HORA CIERRE": "18:00:00"},
+            ],
+            [    # LISTA A I tipo tratamientos
+                {"TIPO DE TRATAMIENTO": "Odontologia primera vez", "Duracion Turno": "00:30:00"},
+                {"TIPO DE TRATAMIENTO": "Control", "Duracion Turno": "00:30:00"},
+            ],
+        ])
+
         result = await manager._tool_buscar_disponibilidad({
             "preferencia_dia": "lunes",
             "semanas": 2,
         })
         assert result["status"] == "ok"
+        assert "opciones_disponibles" in result
+        assert len(result["opciones_disponibles"]) > 0
+        assert "duracion_minutos" in result
 
         # Verificar selector del Find
         call_args = mock_appsheet.find.call_args_list
-        # Primer call = BBDD SESIONES, segundo = horarios
+        # Primer call = BBDD SESIONES, segundo = horarios, tercero = tipos
         sesiones_call = call_args[0]
         selector = sesiones_call[1].get("selector", sesiones_call[0][1] if len(sesiones_call[0]) > 1 else "")
 
@@ -186,6 +202,10 @@ class TestBuscarDisponibilidad:
         assert "Cancelada" in selector
         # Verificar que NO tiene comillas alrededor del nombre de tabla
         assert 'Filter(BBDD SESIONES,' in selector
+
+        # Verificar que consultó la tabla de tipos de tratamiento
+        tipos_call = call_args[2]
+        assert tipos_call[0][0] == "LISTA A I tipo tratamientos"
 
 
 class TestAgendarTurno:

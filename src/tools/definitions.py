@@ -144,8 +144,10 @@ BUSCAR_DISPONIBILIDAD = {
     "name": "buscar_disponibilidad",
     "description": (
         "Busca turnos disponibles cruzando horarios de atención con "
-        "turnos ya agendados en BBDD SESIONES. Busca en las próximas 3 semanas. "
-        "Retorna 2-3 opciones disponibles."
+        "turnos ya agendados en BBDD SESIONES. Retorna 2-3 opciones disponibles. "
+        "IMPORTANTE: cuando el paciente pide turno para una fecha específica "
+        "(ej: '25 de marzo', 'la semana que viene'), SIEMPRE pasar fecha_desde "
+        "con esa fecha para buscar desde ahí. Si no se pasa, busca desde hoy."
     ),
     "input_schema": {
         "type": "object",
@@ -173,8 +175,17 @@ BUSCAR_DISPONIBILIDAD = {
             },
             "semanas": {
                 "type": "integer",
-                "description": "Cantidad de semanas a buscar (default 3, urgencias 1)",
+                "description": "Cantidad de semanas a buscar desde fecha_desde (default 3, urgencias 1)",
                 "default": 3,
+            },
+            "fecha_desde": {
+                "type": "string",
+                "description": (
+                    "Fecha desde la cual buscar turnos (DD/MM/YYYY). "
+                    "USAR SIEMPRE que el paciente mencione una fecha específica. "
+                    "El año DEBE ser el año actual (2026). "
+                    "Si no se pasa, busca desde hoy."
+                ),
             },
         },
     },
@@ -216,7 +227,7 @@ AGENDAR_TURNO = {
             },
             "profesional": {
                 "type": "string",
-                "description": "Profesional asignado (ej: Cynthia Hatzerian, Ana Miño)",
+                "description": "Profesional asignado en formato 'Apellido, Nombre' (ej: 'Hatzerian, Cynthia', 'Miño, Ana')",
             },
             "observaciones": {
                 "type": "string",
@@ -238,7 +249,9 @@ BUSCAR_TURNO_PACIENTE = {
     "name": "buscar_turno_paciente",
     "description": (
         "Busca los turnos (próximos y recientes) de un paciente en BBDD SESIONES. "
-        "Retorna turnos Planificados, Confirmados y Realizados recientes."
+        "Retorna turnos Planificados, Confirmados y Realizados recientes. "
+        "IMPORTANTE: SIEMPRE usá esta tool ANTES de modificar_turno o cancelar_turno "
+        "para obtener el ID Sesion real del turno."
     ),
     "input_schema": {
         "type": "object",
@@ -256,14 +269,19 @@ MODIFICAR_TURNO = {
     "name": "modificar_turno",
     "description": (
         "Modifica un turno existente en BBDD SESIONES "
-        "(cambiar fecha, hora y/o profesional). El estado se mantiene en Planificada."
+        "(cambiar fecha, hora y/o profesional). El estado se mantiene en Planificada. "
+        "IMPORTANTE: ANTES de usar esta tool, SIEMPRE llamá a buscar_turno_paciente "
+        "para obtener el ID Sesion real. NUNCA inventes IDs."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "turno_id": {
                 "type": "string",
-                "description": "ID del turno en AppSheet",
+                "description": (
+                    "ID Sesion REAL obtenido de buscar_turno_paciente. "
+                    "Es un UUID (ej: 'rsMbSMi9eW2MvWIzURHujF'). NUNCA inventar."
+                ),
             },
             "nueva_fecha": {
                 "type": "string",
@@ -275,7 +293,7 @@ MODIFICAR_TURNO = {
             },
             "profesional": {
                 "type": "string",
-                "description": "Profesional (puede cambiar si el día lo requiere)",
+                "description": "Profesional en formato 'Apellido, Nombre' (ej: 'Hatzerian, Cynthia')",
             },
         },
         "required": ["turno_id", "nueva_fecha", "nueva_hora", "profesional"],
@@ -293,7 +311,10 @@ CANCELAR_TURNO = {
         "properties": {
             "turno_id": {
                 "type": "string",
-                "description": "ID del turno a cancelar",
+                "description": (
+                    "ID Sesion REAL obtenido de buscar_turno_paciente. "
+                    "Es un UUID (ej: 'rsMbSMi9eW2MvWIzURHujF'). NUNCA inventar."
+                ),
             },
         },
         "required": ["turno_id"],

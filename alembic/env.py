@@ -16,6 +16,7 @@ from src.models.base import Base
 from src.models.conversation import Conversation  # noqa: F401
 from src.models.message import Message  # noqa: F401
 from src.models.conversation_state import ConversationState, ConversationSummary  # noqa: F401
+from src.models.sent_reminder import SentReminder  # noqa: F401
 
 # Alembic Config object
 config = context.config

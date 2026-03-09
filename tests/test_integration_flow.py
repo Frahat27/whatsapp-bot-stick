@@ -247,3 +247,152 @@ class TestEnsureAlternation:
         assert len(result) == 2
         assert "Parte 1" in result[1]["content"]
         assert "Parte 2" in result[1]["content"]
+
+
+# =============================================================================
+# TESTS DE AUDIO
+# =============================================================================
+
+class TestAudioMessage:
+    """Audio transcrito → Claude responde al contenido del audio."""
+
+    async def test_audio_transcribed_and_claude_responds(self, db_session):
+        """Audio → transcripción → Claude responde con texto normal."""
+        mock_send = AsyncMock()
+        mock_read = AsyncMock()
+        mock_claude = AsyncMock(return_value="Perfecto, te agendo un turno para el lunes.")
+
+        mock_appsheet = MagicMock()
+        mock_appsheet.find_patient_by_phone = AsyncMock(return_value=None)
+        mock_appsheet.find_lead_by_phone = AsyncMock(return_value=None)
+        mock_appsheet_factory = MagicMock(return_value=mock_appsheet)
+
+        with patch("src.services.conversation_manager.send_text", mock_send), \
+             patch("src.services.conversation_manager.mark_as_read", mock_read), \
+             patch("src.services.conversation_manager.generate_response", mock_claude), \
+             patch("src.services.conversation_manager.get_appsheet_client", mock_appsheet_factory), \
+             patch("src.services.conversation_manager.download_media", AsyncMock(return_value=b"\x00\x01\x02")), \
+             patch("src.clients.audio_transcription.get_settings", return_value=MagicMock(groq_api_key="test-key")), \
+             patch("src.clients.audio_transcription._get_client") as mock_groq:
+
+            # Mock Groq response
+            groq_response = MagicMock()
+            groq_response.status_code = 200
+            groq_response.json.return_value = {"text": "Hola, quiero sacar un turno para el lunes"}
+            mock_groq.return_value.post = AsyncMock(return_value=groq_response)
+
+            manager = ConversationManager(db_session)
+            result = await manager.handle_incoming_message(
+                phone="1199001122",
+                content="[Audio recibido]",
+                message_type="audio",
+                wa_message_id="wamid.audio_001",
+                media_id="media_audio_001",
+            )
+
+        assert result is not None
+        assert "turno" in result.lower() or "lunes" in result.lower()
+
+        # Verificar que Claude recibió el texto transcrito (no "[Audio recibido]")
+        call_kwargs = mock_claude.call_args[1]
+        messages_sent = call_kwargs["messages"]
+        last_user_msg = [m for m in messages_sent if m["role"] == "user"][-1]
+        assert "El paciente envió un audio que dice" in last_user_msg["content"]
+        assert "quiero sacar un turno" in last_user_msg["content"]
+
+    async def test_audio_without_groq_key_asks_for_text(self, db_session):
+        """Sin GROQ_API_KEY → pide escribir por texto."""
+        mock_send = AsyncMock()
+        mock_claude = AsyncMock(return_value="No debería llegar")
+
+        mock_appsheet = MagicMock()
+        mock_appsheet.find_patient_by_phone = AsyncMock(return_value=None)
+        mock_appsheet.find_lead_by_phone = AsyncMock(return_value=None)
+        mock_appsheet_factory = MagicMock(return_value=mock_appsheet)
+
+        with patch("src.services.conversation_manager.send_text", mock_send), \
+             patch("src.services.conversation_manager.mark_as_read", AsyncMock()), \
+             patch("src.services.conversation_manager.generate_response", mock_claude), \
+             patch("src.services.conversation_manager.get_appsheet_client", mock_appsheet_factory), \
+             patch("src.clients.audio_transcription.get_settings", return_value=MagicMock(groq_api_key="")):
+
+            manager = ConversationManager(db_session)
+            result = await manager.handle_incoming_message(
+                phone="1199002233",
+                content="[Audio recibido]",
+                message_type="audio",
+                wa_message_id="wamid.audio_no_key",
+                media_id="media_audio_no_key",
+            )
+
+        assert result is not None
+        assert "texto" in result.lower()
+        # Claude NO debe haber sido llamado
+        mock_claude.assert_not_called()
+
+    async def test_audio_download_fails_asks_resend(self, db_session):
+        """Download de audio falla → pide reenvío."""
+        mock_send = AsyncMock()
+        mock_claude = AsyncMock(return_value="No debería llegar")
+
+        mock_appsheet = MagicMock()
+        mock_appsheet.find_patient_by_phone = AsyncMock(return_value=None)
+        mock_appsheet.find_lead_by_phone = AsyncMock(return_value=None)
+        mock_appsheet_factory = MagicMock(return_value=mock_appsheet)
+
+        with patch("src.services.conversation_manager.send_text", mock_send), \
+             patch("src.services.conversation_manager.mark_as_read", AsyncMock()), \
+             patch("src.services.conversation_manager.generate_response", mock_claude), \
+             patch("src.services.conversation_manager.get_appsheet_client", mock_appsheet_factory), \
+             patch("src.services.conversation_manager.download_media", AsyncMock(return_value=None)), \
+             patch("src.clients.audio_transcription.get_settings", return_value=MagicMock(groq_api_key="test-key")):
+
+            manager = ConversationManager(db_session)
+            result = await manager.handle_incoming_message(
+                phone="1199003344",
+                content="[Audio recibido]",
+                message_type="audio",
+                wa_message_id="wamid.audio_dl_fail",
+                media_id="media_audio_dl_fail",
+            )
+
+        assert result is not None
+        assert "de nuevo" in result.lower() or "texto" in result.lower()
+        mock_claude.assert_not_called()
+
+    async def test_audio_transcription_fails_asks_for_text(self, db_session):
+        """Transcripción falla → pide escribir por texto."""
+        mock_send = AsyncMock()
+        mock_claude = AsyncMock(return_value="No debería llegar")
+
+        mock_appsheet = MagicMock()
+        mock_appsheet.find_patient_by_phone = AsyncMock(return_value=None)
+        mock_appsheet.find_lead_by_phone = AsyncMock(return_value=None)
+        mock_appsheet_factory = MagicMock(return_value=mock_appsheet)
+
+        with patch("src.services.conversation_manager.send_text", mock_send), \
+             patch("src.services.conversation_manager.mark_as_read", AsyncMock()), \
+             patch("src.services.conversation_manager.generate_response", mock_claude), \
+             patch("src.services.conversation_manager.get_appsheet_client", mock_appsheet_factory), \
+             patch("src.services.conversation_manager.download_media", AsyncMock(return_value=b"\x00\x01")), \
+             patch("src.clients.audio_transcription.get_settings", return_value=MagicMock(groq_api_key="test-key")), \
+             patch("src.clients.audio_transcription._get_client") as mock_groq:
+
+            # Groq devuelve error
+            groq_response = MagicMock()
+            groq_response.status_code = 500
+            groq_response.text = "Internal error"
+            mock_groq.return_value.post = AsyncMock(return_value=groq_response)
+
+            manager = ConversationManager(db_session)
+            result = await manager.handle_incoming_message(
+                phone="1199004455",
+                content="[Audio recibido]",
+                message_type="audio",
+                wa_message_id="wamid.audio_groq_fail",
+                media_id="media_audio_groq_fail",
+            )
+
+        assert result is not None
+        assert "texto" in result.lower()
+        mock_claude.assert_not_called()

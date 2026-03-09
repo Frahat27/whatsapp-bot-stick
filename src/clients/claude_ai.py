@@ -83,7 +83,7 @@ async def generate_response(
     max_tokens: int = 1024,
 ) -> str:
     """
-    Genera una respuesta de Claude con tool calling loop.
+    Genera una respuesta de Claude con tool calling loop + timeout global.
 
     Args:
         messages: Historial de conversación en formato Anthropic
@@ -97,6 +97,42 @@ async def generate_response(
     Returns:
         Texto de respuesta final de Claude para enviar al paciente.
     """
+    import asyncio
+
+    settings = get_settings()
+    timeout = settings.conversation_timeout_seconds
+
+    try:
+        return await asyncio.wait_for(
+            _generate_response_inner(
+                messages=messages,
+                tool_executor=tool_executor,
+                patient_context=patient_context,
+                model=model,
+                max_tokens=max_tokens,
+            ),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "claude_timeout",
+            timeout_seconds=timeout,
+            messages_count=len(messages),
+        )
+        return (
+            "Dame un momento, estoy consultando tu información. "
+            "Ya te respondo."
+        )
+
+
+async def _generate_response_inner(
+    messages: list[dict],
+    tool_executor: Optional[ToolExecutor] = None,
+    patient_context: Optional[dict] = None,
+    model: str = DEFAULT_MODEL,
+    max_tokens: int = 1024,
+) -> str:
+    """Lógica interna de generación de respuesta (sin timeout)."""
     client = _get_client()
     system_prompt = _build_system_prompt(patient_context)
 

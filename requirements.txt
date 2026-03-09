@@ -24,6 +24,12 @@ google-auth==2.37.0
 pydantic-settings==2.7.1
 python-dotenv==1.0.1
 
+# Auth (Admin Panel)
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+python-multipart>=0.0.20
+
 # Logging
 structlog==24.4.0
 

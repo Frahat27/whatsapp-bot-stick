@@ -165,17 +165,85 @@ async def _process_message(
     media_id: str | None = None,
 ) -> None:
     """
-    Procesa un mensaje entrante usando ConversationManager.
-    Se ejecuta como background task (fuera del request HTTP).
-    Crea su propia DB session ya que el request original ya cerró la suya.
+    Procesa un mensaje entrante con lock por conversación.
+
+    Si otro mensaje del mismo teléfono está siendo procesado,
+    este mensaje se encola y se procesa cuando el anterior termine.
+    Si Redis no está disponible, procesa directamente (sin lock).
     """
+    from src.services.conversation_lock import (
+        acquire_lock,
+        dequeue_message,
+        enqueue_message,
+        generate_owner_id,
+        release_lock,
+    )
+
+    owner_id = generate_owner_id()
+    locked = await acquire_lock(phone, owner_id)
+
+    if not locked:
+        # Otro proceso está manejando esta conversación → encolar
+        enqueued = await enqueue_message(phone, {
+            "content": content,
+            "message_type": message_type,
+            "wa_message_id": wa_message_id,
+            "contact_name": contact_name,
+            "media_id": media_id,
+        })
+        if enqueued:
+            logger.info("message_queued_for_later", phone=phone, wa_id=wa_message_id)
+        else:
+            # Redis falló al encolar → procesar directamente como fallback
+            await _handle_single_message(
+                phone, content, message_type, wa_message_id, contact_name, media_id,
+            )
+        return
+
+    try:
+        # Procesar este mensaje
+        await _handle_single_message(
+            phone, content, message_type, wa_message_id, contact_name, media_id,
+        )
+
+        # Drenar cola: procesar mensajes que llegaron durante el procesamiento
+        while True:
+            queued = await dequeue_message(phone)
+            if not queued:
+                break
+            await _handle_single_message(
+                phone=phone,
+                content=queued["content"],
+                message_type=queued["message_type"],
+                wa_message_id=queued["wa_message_id"],
+                contact_name=queued.get("contact_name"),
+                media_id=queued.get("media_id"),
+            )
+    finally:
+        await release_lock(phone, owner_id)
+
+
+async def _handle_single_message(
+    phone: str,
+    content: str,
+    message_type: str,
+    wa_message_id: str,
+    contact_name: str | None,
+    media_id: str | None = None,
+) -> None:
+    """
+    Procesa UN mensaje usando ConversationManager.
+    Crea sus propias DB sessions (Neon + Cloud SQL) ya que el request original ya cerró la suya.
+    """
+    from src.db.clinic_session import get_clinic_session_factory
     from src.db.session import get_session_factory
     from src.services.conversation_manager import ConversationManager
 
     factory = get_session_factory()
-    async with factory() as db:
+    clinic_factory = get_clinic_session_factory()
+    async with factory() as db, clinic_factory() as clinic_db:
         try:
-            manager = ConversationManager(db)
+            manager = ConversationManager(db, clinic_db)
             await manager.handle_incoming_message(
                 phone=phone,
                 content=content,
@@ -192,3 +260,4 @@ async def _process_message(
                 wa_id=wa_message_id,
             )
             await db.rollback()
+            await clinic_db.rollback()

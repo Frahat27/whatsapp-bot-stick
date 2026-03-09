@@ -82,12 +82,20 @@ async def _send_message(payload: dict) -> dict:
 
 async def send_text(to: str, text: str) -> dict:
     """
-    Enviar mensaje de texto por WhatsApp.
+    Enviar mensaje de texto por WhatsApp con retry automático.
+
+    Reintenta en errores de red/timeout (no en 400 Bad Request).
+    Backoff: 2s, 4s, 8s.
 
     Args:
         to: Número destino en formato 549XXXXXXXXXX (sin +)
         text: Texto del mensaje (máx ~4096 chars)
     """
+    import asyncio
+
+    settings = get_settings()
+    max_retries = settings.whatsapp_max_retries
+
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
@@ -95,7 +103,47 @@ async def send_text(to: str, text: str) -> dict:
         "type": "text",
         "text": {"body": text},
     }
-    return await _send_message(payload)
+
+    last_result = None
+    for attempt in range(max_retries):
+        result = await _send_message(payload)
+
+        # Éxito → retornar
+        if result.get("status") == "ok":
+            return result
+
+        last_result = result
+
+        # No reintentar en errores de cliente (400, 401, etc.)
+        error = result.get("error", {})
+        if isinstance(error, dict):
+            error_code = error.get("code", 0)
+            if isinstance(error_code, int) and 400 <= error_code < 500:
+                logger.warning(
+                    "whatsapp_no_retry_client_error",
+                    to=to, attempt=attempt + 1, error_code=error_code,
+                )
+                return result
+
+        # Error retryable → esperar y reintentar
+        if attempt < max_retries - 1:
+            wait_time = 2 ** (attempt + 1)  # 2s, 4s, 8s
+            logger.warning(
+                "whatsapp_retry",
+                to=to,
+                attempt=attempt + 1,
+                wait_seconds=wait_time,
+                error=str(error)[:200],
+            )
+            await asyncio.sleep(wait_time)
+
+    # Todos los reintentos fallaron
+    logger.error(
+        "whatsapp_all_retries_failed",
+        to=to,
+        max_retries=max_retries,
+    )
+    return last_result or {"status": "error", "error": "All retries failed"}
 
 
 async def send_image(

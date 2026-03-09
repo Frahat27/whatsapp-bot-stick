@@ -198,3 +198,26 @@ class TestGenerateResponseMocked:
         user_msg = call_args[1]["messages"][-1]
         assert user_msg["role"] == "user"
         assert user_msg["content"][0]["is_error"] is True
+
+    async def test_timeout_returns_friendly_message(self):
+        """Timeout global → mensaje amigable, no crash."""
+        import asyncio
+
+        async def slow_create(**kwargs):
+            await asyncio.sleep(10)  # Simular respuesta muy lenta
+            return MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.messages.create = slow_create
+
+        with patch("src.clients.claude_ai._get_client", return_value=mock_client), \
+             patch("src.clients.claude_ai.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(
+                conversation_timeout_seconds=0.1,  # 100ms timeout
+                anthropic_api_key="test-key",
+            )
+            result = await generate_response(
+                messages=[{"role": "user", "content": "Hola"}],
+            )
+
+        assert "momento" in result or "consultando" in result

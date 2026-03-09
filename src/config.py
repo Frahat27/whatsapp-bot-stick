@@ -55,11 +55,17 @@ class Settings(BaseSettings):
     # --- Claude API (Anthropic) ---
     anthropic_api_key: str = ""
 
-    # --- PostgreSQL (Neon) ---
+    # --- PostgreSQL (Neon) — bot-internal data ---
     database_url: str = ""
+
+    # --- PostgreSQL (Cloud SQL) — clinic data (nexus_clinic_os) ---
+    clinic_database_url: str = ""
 
     # --- Redis (Upstash) ---
     redis_url: str = ""
+
+    # --- Groq (Audio Transcription) ---
+    groq_api_key: str = ""
 
     # --- Google Sheets ---
     google_sheets_credentials_file: str = "credentials/franco.json"
@@ -76,6 +82,31 @@ class Settings(BaseSettings):
     # --- Conversation ---
     conversation_history_limit: int = 25  # últimos N mensajes como contexto
     conversation_summary_threshold: int = 50  # resumir al superar N mensajes
+    conversation_lock_ttl_seconds: int = 120  # TTL del lock por conversación
+    conversation_timeout_seconds: int = 90  # timeout global del tool calling loop
+
+    # --- Scheduler ---
+    scheduler_enabled: bool = True  # False para deshabilitar todos los jobs
+    scheduler_appointment_cron_hour: int = 10  # 10:00 AM Argentina
+    scheduler_lead_followup_cron_hour: int = 11  # 11:00 AM Argentina
+    scheduler_lock_ttl_seconds: int = 600  # 10 min max para un job
+    scheduler_confirmation_interval_minutes: int = 60  # Cada 60 min
+    scheduler_birthday_cron_hour: int = 9  # 9:00 AM Argentina
+    scheduler_aligner_cron_hour: int = 10  # 10:00 AM Argentina
+    scheduler_review_cron_hour: int = 14  # 14:00 Argentina
+
+    # --- Google Maps Review ---
+    google_maps_review_link: str = "https://g.page/r/CXyr_5_Wv5_7EBM/review"
+
+    # --- Admin Panel Auth (JWT) ---
+    jwt_secret_key: str = "change-me-in-production-use-a-random-string"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_hours: int = 24
+    admin_password_hash_franco: str = ""
+    admin_password_hash_cynthia: str = ""
+
+    # --- WhatsApp retry ---
+    whatsapp_max_retries: int = 3  # reintentos para send_text
 
     @property
     def admin_phone_list(self) -> list[str]:

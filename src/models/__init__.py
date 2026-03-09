@@ -11,3 +11,9 @@ from src.models.conversation_state import (  # noqa: F401
     ConversationStatus,
     ConversationSummary,
 )
+from src.models.sent_reminder import (  # noqa: F401
+    SentReminder,
+    ReminderType,
+    ReminderStatus,
+)
+from src.models.tool_call import ToolCall  # noqa: F401

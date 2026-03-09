@@ -27,6 +27,16 @@ import httpx
 from src.config import get_settings
 from src.utils.logging_config import get_logger
 
+# Cache keys & TTLs
+_CACHE_TTL_PATIENT = 300      # 5 min — datos de paciente
+_CACHE_TTL_LEAD = 300          # 5 min — datos de lead
+_CACHE_TTL_STATIC = 86400      # 24h — horarios, tarifario
+_STATIC_TABLES = frozenset([
+    "LISTA O | HORARIOS DE ATENCION",
+    "BBDD TARIFARIO",
+    "LISTA A I tipo tratamientos",
+])
+
 logger = get_logger(__name__)
 
 # Base URL de AppSheet API v2
@@ -90,6 +100,7 @@ class AppSheetClient:
     ) -> list[dict[str, Any]]:
         """
         Buscar registros en una tabla.
+        Cachea automáticamente tablas estáticas (horarios, tarifario).
 
         Args:
             table: Nombre exacto de la tabla (ej: "BBDD PACIENTES")
@@ -98,6 +109,15 @@ class AppSheetClient:
         Returns:
             Lista de diccionarios con los registros encontrados.
         """
+        # Cache para tablas estáticas (horarios, tarifario)
+        if table in _STATIC_TABLES:
+            cache_key = f"cache:static:{table}"
+            if selector:
+                cache_key += f":{selector}"
+            cached = await self._cache_get(cache_key)
+            if cached is not None:
+                return cached
+
         body: dict[str, Any] = {
             "Action": "Find",
             "Properties": {},
@@ -106,11 +126,21 @@ class AppSheetClient:
         if selector:
             body["Properties"]["Selector"] = selector
 
-        return await self._request(table, body, action="Find")
+        result = await self._request(table, body, action="Find")
+
+        # Cachear tablas estáticas
+        if table in _STATIC_TABLES:
+            cache_key = f"cache:static:{table}"
+            if selector:
+                cache_key += f":{selector}"
+            await self._cache_set(cache_key, result, _CACHE_TTL_STATIC)
+
+        return result
 
     async def add(self, table: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Agregar registros a una tabla.
+        Invalida cache de paciente/lead si aplica.
 
         Args:
             table: Nombre exacto de la tabla.
@@ -124,11 +154,16 @@ class AppSheetClient:
             "Properties": {},
             "Rows": rows,
         }
-        return await self._request(table, body, action="Add")
+        result = await self._request(table, body, action="Add")
+
+        # Invalidar cache relacionado
+        await self._invalidate_cache_for_table(table, rows)
+        return result
 
     async def edit(self, table: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Editar registros existentes.
+        Invalida cache de paciente/lead si aplica.
 
         Args:
             table: Nombre exacto de la tabla.
@@ -144,7 +179,11 @@ class AppSheetClient:
             "Properties": {},
             "Rows": rows,
         }
-        return await self._request(table, body, action="Edit")
+        result = await self._request(table, body, action="Edit")
+
+        # Invalidar cache relacionado
+        await self._invalidate_cache_for_table(table, rows)
+        return result
 
     async def delete(self, table: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
@@ -164,6 +203,47 @@ class AppSheetClient:
         }
         return await self._request(table, body, action="Delete")
 
+    # --- Cache helpers (Redis, graceful degradation) ---
+
+    async def _cache_get(self, key: str) -> Optional[Any]:
+        """Lee del cache Redis. Retorna None si no hay cache o key no existe."""
+        try:
+            from src.clients.redis_client import get_redis
+            redis = await get_redis()
+            if redis is None:
+                return None
+            data = await redis.get(key)
+            if data is not None:
+                logger.debug("cache_hit", key=key)
+                return json.loads(data)
+        except Exception as e:
+            logger.debug("cache_get_error", key=key, error=str(e))
+        return None
+
+    async def _cache_set(self, key: str, value: Any, ttl: int) -> None:
+        """Escribe al cache Redis con TTL. No falla si Redis no disponible."""
+        try:
+            from src.clients.redis_client import get_redis
+            redis = await get_redis()
+            if redis is None:
+                return
+            await redis.setex(key, ttl, json.dumps(value, default=str))
+            logger.debug("cache_set", key=key, ttl=ttl)
+        except Exception as e:
+            logger.debug("cache_set_error", key=key, error=str(e))
+
+    async def _cache_delete(self, *keys: str) -> None:
+        """Borra keys del cache. Silencioso si falla."""
+        try:
+            from src.clients.redis_client import get_redis
+            redis = await get_redis()
+            if redis is None:
+                return
+            await redis.delete(*keys)
+            logger.debug("cache_invalidated", keys=keys)
+        except Exception as e:
+            logger.debug("cache_delete_error", error=str(e))
+
     # --- Métodos de conveniencia ---
 
     async def find_by_phone(self, table: str, phone_10: str) -> list[dict[str, Any]]:
@@ -181,14 +261,56 @@ class AppSheetClient:
         return await self.find(table, selector=selector)
 
     async def find_patient_by_phone(self, phone_10: str) -> Optional[dict[str, Any]]:
-        """Buscar paciente por teléfono. Retorna el primero o None."""
+        """Buscar paciente por teléfono. Con cache Redis (5 min TTL)."""
+        cache_key = f"cache:patient:{phone_10}"
+        cached = await self._cache_get(cache_key)
+        if cached is not None:
+            # cached puede ser dict (encontrado) o False (no encontrado)
+            return cached if cached is not False else None
+
         results = await self.find_by_phone("BBDD PACIENTES", phone_10)
-        return results[0] if results else None
+        result = results[0] if results else None
+
+        # Cachear resultado (incluyendo "no encontrado" como False)
+        await self._cache_set(cache_key, result if result else False, _CACHE_TTL_PATIENT)
+        return result
 
     async def find_lead_by_phone(self, phone_10: str) -> Optional[dict[str, Any]]:
-        """Buscar lead por teléfono. Retorna el primero o None."""
+        """Buscar lead por teléfono. Con cache Redis (5 min TTL)."""
+        cache_key = f"cache:lead:{phone_10}"
+        cached = await self._cache_get(cache_key)
+        if cached is not None:
+            return cached if cached is not False else None
+
         results = await self.find_by_phone("BBDD LEADS", phone_10)
-        return results[0] if results else None
+        result = results[0] if results else None
+
+        await self._cache_set(cache_key, result if result else False, _CACHE_TTL_LEAD)
+        return result
+
+    async def _invalidate_cache_for_table(
+        self, table: str, rows: list[dict[str, Any]]
+    ) -> None:
+        """Invalida cache relevante después de Add/Edit/Delete."""
+        keys_to_delete = []
+
+        if table == "BBDD PACIENTES":
+            for row in rows:
+                phone = row.get("Telefono (Whatsapp)", "")
+                if phone:
+                    # Normalizar: tomar últimos 10 dígitos
+                    phone_10 = phone[-10:] if len(phone) >= 10 else phone
+                    keys_to_delete.append(f"cache:patient:{phone_10}")
+
+        elif table == "BBDD LEADS":
+            for row in rows:
+                phone = row.get("Telefono (Whatsapp)", "")
+                if phone:
+                    phone_10 = phone[-10:] if len(phone) >= 10 else phone
+                    keys_to_delete.append(f"cache:lead:{phone_10}")
+
+        if keys_to_delete:
+            await self._cache_delete(*keys_to_delete)
 
     # --- Core request con rate limiting y retry ---
 
