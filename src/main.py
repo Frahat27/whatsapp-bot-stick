@@ -131,7 +131,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=["*"] if not settings.is_production else [
             "https://admin.sticksmile.com",
-            "https://romantic-celebration-production.up.railway.app",
+            "https://stick-agente-sofia.up.railway.app",
         ],
         allow_credentials=True,
         allow_methods=["*"],
