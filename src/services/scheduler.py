@@ -2,7 +2,7 @@
 Integracion APScheduler — jobs programados de recordatorios.
 
 Corre dentro del proceso FastAPI. Usa CronTrigger con
-timezone America/Buenos_Aires. Redis distributed lock previene
+timezone America/Argentina/Buenos_Aires. Redis distributed lock previene
 ejecucion duplicada si hay multiples instancias.
 """
 
@@ -17,7 +17,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from src.config import get_settings
 from src.utils.logging_config import get_logger
 
-_TZ_ARG = ZoneInfo("America/Buenos_Aires")
+_TZ_ARG = ZoneInfo("America/Argentina/Buenos_Aires")
 
 logger = get_logger(__name__)
 

@@ -10,7 +10,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 # Timezone de Argentina
-BUENOS_AIRES = ZoneInfo("America/Buenos_Aires")
+BUENOS_AIRES = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
 def to_appsheet_date(d: date) -> str:

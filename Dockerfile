@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-ENV TZ=America/Buenos_Aires
+ENV TZ=America/Argentina/Buenos_Aires
 
 # Install Python deps (tzdata included in requirements.txt)
 COPY requirements.txt .
