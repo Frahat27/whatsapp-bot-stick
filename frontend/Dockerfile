@@ -7,8 +7,8 @@ RUN npm ci
 
 COPY . .
 
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+# Build-time env — backend URL on Railway
+ENV NEXT_PUBLIC_API_URL=https://whatsapp-bot-stick-production.up.railway.app
 
 RUN npm run build
 
