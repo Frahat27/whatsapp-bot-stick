@@ -8,12 +8,16 @@ ejecucion duplicada si hay multiples instancias.
 
 from __future__ import annotations
 
+from zoneinfo import ZoneInfo
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from src.config import get_settings
 from src.utils.logging_config import get_logger
+
+_TZ_ARG = ZoneInfo("America/Buenos_Aires")
 
 logger = get_logger(__name__)
 
@@ -34,7 +38,7 @@ async def start_scheduler() -> None:
         logger.info("scheduler_disabled")
         return
 
-    _scheduler = AsyncIOScheduler(timezone="America/Buenos_Aires")
+    _scheduler = AsyncIOScheduler(timezone=_TZ_ARG)
 
     # Job 1: Recordatorios de turno (diario a la hora configurada)
     _scheduler.add_job(
@@ -42,7 +46,7 @@ async def start_scheduler() -> None:
         trigger=CronTrigger(
             hour=settings.scheduler_appointment_cron_hour,
             minute=0,
-            timezone="America/Buenos_Aires",
+            timezone=_TZ_ARG,
         ),
         id="appointment_reminders",
         name="Recordatorios de turnos (24h antes)",
@@ -56,7 +60,7 @@ async def start_scheduler() -> None:
         trigger=CronTrigger(
             hour=settings.scheduler_lead_followup_cron_hour,
             minute=0,
-            timezone="America/Buenos_Aires",
+            timezone=_TZ_ARG,
         ),
         id="lead_followup",
         name="Seguimiento de leads (dia 3 y 7)",
@@ -69,6 +73,7 @@ async def start_scheduler() -> None:
         _run_appointment_confirmations,
         trigger=IntervalTrigger(
             minutes=settings.scheduler_confirmation_interval_minutes,
+            timezone=_TZ_ARG,
         ),
         id="appointment_confirmations",
         name="Confirmacion de turnos agendados",
@@ -82,7 +87,7 @@ async def start_scheduler() -> None:
         trigger=CronTrigger(
             hour=settings.scheduler_birthday_cron_hour,
             minute=0,
-            timezone="America/Buenos_Aires",
+            timezone=_TZ_ARG,
         ),
         id="birthday_greetings",
         name="Saludos de cumpleanos",
@@ -96,7 +101,7 @@ async def start_scheduler() -> None:
         trigger=CronTrigger(
             hour=settings.scheduler_aligner_cron_hour,
             minute=0,
-            timezone="America/Buenos_Aires",
+            timezone=_TZ_ARG,
         ),
         id="aligner_reminders",
         name="Recordatorio cambio de alineadores",
@@ -110,7 +115,7 @@ async def start_scheduler() -> None:
         trigger=CronTrigger(
             hour=settings.scheduler_review_cron_hour,
             minute=0,
-            timezone="America/Buenos_Aires",
+            timezone=_TZ_ARG,
         ),
         id="google_review_requests",
         name="Solicitud review Google Maps",
