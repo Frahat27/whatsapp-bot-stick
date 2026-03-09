@@ -1,12 +1,10 @@
-FROM python:3.11-slim AS base
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install tzdata for America/Buenos_Aires timezone
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata && rm -rf /var/lib/apt/lists/*
 ENV TZ=America/Buenos_Aires
 
-# Install Python deps
+# Install Python deps (tzdata included in requirements.txt)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -15,7 +13,7 @@ COPY src/ src/
 COPY alembic/ alembic/
 COPY alembic.ini .
 
-# Create empty credentials dir (will use env vars in production)
+# Create empty credentials dir
 RUN mkdir -p credentials
 
 ENV PORT=8000
