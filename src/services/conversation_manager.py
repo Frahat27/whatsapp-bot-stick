@@ -431,7 +431,9 @@ class ConversationManager:
         try:
             result = await handler(tool_input)
         except Exception as e:
-            logger.error("tool_execution_error", tool=tool_name, error=str(e))
+            import traceback
+            tb = traceback.format_exc()
+            logger.error("tool_execution_error", tool=tool_name, error=str(e), traceback=tb)
             result = {"status": "error", "error": str(e)}
 
         duration_ms = (time.monotonic() - t0) * 1000
@@ -579,14 +581,29 @@ class ConversationManager:
             )
 
         # Obtener datos de Cloud SQL y convertir a dicts para availability.py
-        sesiones = await self.clinic_repo.find_sessions_in_range(fecha_desde, fecha_hasta)
-        turnos_ocupados = [s.to_appsheet_dict() for s in sesiones]
+        try:
+            sesiones = await self.clinic_repo.find_sessions_in_range(fecha_desde, fecha_hasta)
+            turnos_ocupados = [s.to_appsheet_dict() for s in sesiones]
+            logger.info("disponibilidad_query_ok", step="sesiones", count=len(turnos_ocupados))
+        except Exception as e:
+            logger.error("disponibilidad_query_fail", step="sesiones", error=str(e))
+            raise
 
-        horarios_models = await self.clinic_repo.get_all_horarios()
-        horarios = [h.to_appsheet_dict() for h in horarios_models]
+        try:
+            horarios_models = await self.clinic_repo.get_all_horarios()
+            horarios = [h.to_appsheet_dict() for h in horarios_models]
+            logger.info("disponibilidad_query_ok", step="horarios", count=len(horarios))
+        except Exception as e:
+            logger.error("disponibilidad_query_fail", step="horarios", error=str(e))
+            raise
 
-        tipos_models = await self.clinic_repo.get_all_treatment_types()
-        tipos_tratamiento = [t.to_appsheet_dict() for t in tipos_models]
+        try:
+            tipos_models = await self.clinic_repo.get_all_treatment_types()
+            tipos_tratamiento = [t.to_appsheet_dict() for t in tipos_models]
+            logger.info("disponibilidad_query_ok", step="tipos", count=len(tipos_tratamiento))
+        except Exception as e:
+            logger.error("disponibilidad_query_fail", step="tipos", error=str(e))
+            raise
 
         # ── DEBUG: Log de diagnóstico para availability ──────────
         logger.info(
