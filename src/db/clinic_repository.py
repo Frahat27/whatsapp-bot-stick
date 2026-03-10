@@ -312,8 +312,7 @@ class ClinicRepository:
         Equivale a: appsheet.add("BBDD SESIONES", [row])
         """
         from datetime import datetime, timedelta
-        dur = timedelta(minutes=duracion_minutos)
-        hora_fin = (datetime.combine(fecha, hora) + dur).time()
+        hora_fin = (datetime.combine(fecha, hora) + timedelta(minutes=duracion_minutos)).time()
 
         sesion = Sesion(
             id_sesion=_new_id(),
@@ -323,7 +322,7 @@ class ClinicRepository:
             fecha=fecha,
             hora=hora,
             hora_fin=hora_fin,
-            duracion=dur,
+            duracion=duracion_minutos,
             profesional=profesional,
             estado="Planificada",
             descripcion=descripcion,
@@ -334,6 +333,10 @@ class ClinicRepository:
         self.session.add(sesion)
         await self.session.flush()
         return sesion
+
+    async def get_session(self, session_id: str) -> Optional[Sesion]:
+        """Obtener una sesion por ID."""
+        return await self.session.get(Sesion, session_id)
 
     async def update_session(
         self, session_id: str, **data

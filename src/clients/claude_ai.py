@@ -59,17 +59,31 @@ def _build_system_prompt(patient_context: Optional[dict] = None) -> str:
     Construye el system prompt completo.
     Si hay contexto de paciente, lo inyecta al inicio para que Claude
     sepa con quién está hablando.
+    Siempre inyecta fecha/hora actual de Argentina.
     """
+    from src.utils.dates import now_argentina
+
     base_prompt = build_full_system_prompt()
 
-    if not patient_context:
-        return base_prompt
+    # Siempre inyectar fecha/hora actual
+    ahora = now_argentina()
+    DIAS_ES = {
+        0: "lunes", 1: "martes", 2: "miércoles", 3: "jueves",
+        4: "viernes", 5: "sábado", 6: "domingo",
+    }
+    dia_semana = DIAS_ES[ahora.weekday()]
+    fecha_hora_str = ahora.strftime(f"{dia_semana} %d/%m/%Y %H:%M")
 
-    # Inyectar contexto del paciente al inicio
-    ctx_lines = ["\n\n---\n\n# CONTEXTO DEL CONTACTO ACTUAL\n"]
-    for key, value in patient_context.items():
-        if value:
-            ctx_lines.append(f"- **{key}:** {value}")
+    ctx_lines = [
+        "\n\n---\n\n# CONTEXTO DE ESTA INTERACCIÓN\n",
+        f"- **Fecha y hora actual:** {fecha_hora_str}",
+    ]
+
+    if patient_context:
+        ctx_lines.append("\n# CONTEXTO DEL CONTACTO ACTUAL\n")
+        for key, value in patient_context.items():
+            if value:
+                ctx_lines.append(f"- **{key}:** {value}")
 
     context_block = "\n".join(ctx_lines)
     return base_prompt + context_block

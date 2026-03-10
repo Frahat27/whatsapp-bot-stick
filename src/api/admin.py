@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select, func, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -47,8 +47,7 @@ class ConversationListItem(BaseModel):
     last_message_at: Optional[str]
     message_count: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ToolCallOut(BaseModel):
@@ -60,8 +59,7 @@ class ToolCallOut(BaseModel):
     status: str
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MessageOut(BaseModel):
@@ -72,8 +70,7 @@ class MessageOut(BaseModel):
     created_at: str
     tool_calls: list[ToolCallOut] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ConversationDetail(BaseModel):
@@ -90,8 +87,7 @@ class ConversationDetail(BaseModel):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SimulateRequest(BaseModel):

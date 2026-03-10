@@ -4,7 +4,7 @@ Pydantic schemas para mensajes internos y respuestas API.
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class MessageOut(BaseModel):
@@ -15,8 +15,7 @@ class MessageOut(BaseModel):
     message_type: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ConversationOut(BaseModel):
@@ -29,8 +28,7 @@ class ConversationOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class HealthResponse(BaseModel):

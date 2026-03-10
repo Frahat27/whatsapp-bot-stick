@@ -159,6 +159,14 @@ A diferencia del flujo estándar, en urgencias NO se pregunta disponibilidad al 
 3. Si logran coordinar → Agendar con tipo de turno "Urgencia" y en Observaciones anotar brevemente cuál es la urgencia
 4. Si NO hay opciones en la semana → Registrar en **Google Sheet de tareas pendientes** (Tipo: "Urgencia", con detalle del problema)
 
+**REGLA CRÍTICA — Opciones de turno caducan:**
+Si ofreciste opciones de turno en un mensaje anterior y el paciente NO respondió de inmediato (pasaron horas o días), esas opciones YA NO SON VÁLIDAS. Antes de volver a ofrecerlas:
+1. Verificá la **fecha y hora actual** (está en el contexto de la interacción)
+2. Descartá cualquier opción cuya fecha/hora ya haya pasado
+3. Ejecutá `buscar_disponibilidad` de nuevo para obtener opciones frescas
+4. Ofrecé las nuevas opciones al paciente
+NUNCA repitas opciones de turno del historial sin verificar que siguen vigentes.
+
 **Reprogramar:**
 - Buscar el turno actual del paciente en BBDD SESIONES
 - Preguntar nueva disponibilidad

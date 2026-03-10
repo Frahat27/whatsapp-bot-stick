@@ -711,7 +711,7 @@ class ConversationManager:
         return {"status": "ok", "turnos": result}
 
     async def _tool_modificar_turno(self, inp: dict) -> dict:
-        from datetime import datetime
+        from datetime import datetime, timedelta
 
         # Parsear nueva fecha DD/MM/YYYY → date
         try:
@@ -729,6 +729,12 @@ class ConversationManager:
         update_data = {"fecha": nueva_fecha, "profesional": inp["profesional"]}
         if nueva_hora:
             update_data["hora"] = nueva_hora
+            # Recalcular hora_fin con la duración existente (o default 30 min)
+            sesion_actual = await self.clinic_repo.get_session(inp["turno_id"])
+            dur_min = sesion_actual.duracion if sesion_actual and sesion_actual.duracion else 30
+            update_data["hora_fin"] = (
+                datetime.combine(nueva_fecha, nueva_hora) + timedelta(minutes=dur_min)
+            ).time()
 
         sesion = await self.clinic_repo.update_session(inp["turno_id"], **update_data)
         await self._clinic_db.commit()

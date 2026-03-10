@@ -337,6 +337,11 @@ class TestBuscarTurnoPaciente:
 
 class TestModificarTurno:
     async def test_calls_update_session_with_correct_args(self, manager, mock_clinic_repo, mock_clinic_db):
+        # Mock get_session para que devuelva la sesion actual con duracion
+        mock_sesion_actual = MagicMock()
+        mock_sesion_actual.duracion = 30
+        mock_clinic_repo.get_session = AsyncMock(return_value=mock_sesion_actual)
+
         mock_sesion = MagicMock()
         mock_sesion.to_appsheet_dict.return_value = {
             "ID Sesion": "SES-001",
@@ -356,16 +361,19 @@ class TestModificarTurno:
         assert result["status"] == "modified"
         assert "turno" in result
 
-        # Verificar argumentos: turno_id como primer arg, kwargs con fecha/hora/profesional
+        # Verificar argumentos: turno_id como primer arg, kwargs con fecha/hora/profesional/hora_fin
         call_args = mock_clinic_repo.update_session.call_args
         assert call_args[0][0] == "SES-001"  # session_id positional
         assert call_args[1]["fecha"] == date(2026, 3, 15)
         assert call_args[1]["hora"] == time(14, 0)
+        assert call_args[1]["hora_fin"] == time(14, 30)  # 14:00 + 30min
         assert call_args[1]["profesional"] == "Ana Mino"
         # Verificar commit
         mock_clinic_db.commit.assert_called_once()
 
     async def test_turno_not_found_returns_error(self, manager, mock_clinic_repo, mock_clinic_db):
+        # Mock get_session (necesario para recalcular hora_fin)
+        mock_clinic_repo.get_session = AsyncMock(return_value=None)
         mock_clinic_repo.update_session = AsyncMock(return_value=None)
 
         result = await manager._tool_modificar_turno({

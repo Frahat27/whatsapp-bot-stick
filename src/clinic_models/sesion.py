@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date, time, timedelta
+from datetime import date, time
 from typing import Any, Optional
 
-from sqlalchemy import Date, Interval, String, Text, Time
+from sqlalchemy import Date, Integer, String, Text, Time
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.clinic_models.base import ClinicBase
@@ -41,8 +41,8 @@ class Sesion(ClinicBase):
     hora_fin: Mapped[Optional[time]] = mapped_column(
         "Horario Finalizacion", Time
     )
-    duracion: Mapped[Optional[timedelta]] = mapped_column(
-        "Duracion", Interval
+    duracion: Mapped[Optional[int]] = mapped_column(
+        "Duracion", Integer
     )
     profesional: Mapped[Optional[str]] = mapped_column(
         "Profesional Asignado", String(200)
@@ -88,10 +88,7 @@ class Sesion(ClinicBase):
                 self.hora_fin.strftime("%H:%M")
                 if self.hora_fin else None
             ),
-            "Duracion": (
-                int(self.duracion.total_seconds() / 60)
-                if self.duracion else None
-            ),
+            "Duracion": self.duracion,
             "Profesional Asignado": self.profesional,
             "Estado de Sesion": self.estado,
             "Descripcion de la sesion": self.descripcion,
