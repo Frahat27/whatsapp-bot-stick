@@ -323,7 +323,7 @@ class ClinicRepository:
             fecha=fecha,
             hora=hora,
             hora_fin=hora_fin,
-            duracion=duracion_minutos,
+            duracion=dur,
             profesional=profesional,
             estado="Planificada",
             descripcion=descripcion,
