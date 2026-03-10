@@ -35,10 +35,10 @@ export default function DashboardLayout({
 
   return (
     <div className="h-screen overflow-hidden bg-[#d0d9f6] dark:bg-[var(--background)]">
-      {/* Top accent bar */}
-      <div className="h-[127px] bg-gradient-to-r from-[#2a3d6e] via-[#364c85] to-[#4a63a0] fixed top-0 left-0 right-0 z-0" />
-      {/* Main container */}
-      <div className="relative z-10 flex h-[calc(100vh-20px)] mt-[10px] mx-auto max-w-[1600px] shadow-2xl shadow-[#364c85]/10 rounded-lg overflow-hidden">
+      {/* Top accent bar — hidden on mobile */}
+      <div className="hidden md:block h-[127px] bg-gradient-to-r from-[#2a3d6e] via-[#364c85] to-[#4a63a0] fixed top-0 left-0 right-0 z-0" />
+      {/* Main container — full screen on mobile, card on desktop */}
+      <div className="relative z-10 flex h-screen md:h-[calc(100vh-20px)] md:mt-[10px] mx-auto max-w-[1600px] md:shadow-2xl md:shadow-[#364c85]/10 md:rounded-lg overflow-hidden">
         {children}
       </div>
     </div>

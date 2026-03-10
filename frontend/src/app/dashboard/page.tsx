@@ -29,12 +29,12 @@ export default function DashboardPage() {
 
   return (
     <div className="flex h-full w-full">
-      {/* Sidebar */}
-      <div className="w-[380px] flex-shrink-0 bg-white dark:bg-[var(--card)] border-r border-[#e9edef] dark:border-[var(--border)]">
+      {/* Sidebar — full width on mobile, fixed on desktop */}
+      <div className="w-full md:w-[380px] flex-shrink-0 bg-white dark:bg-[var(--card)] md:border-r border-[#e9edef] dark:border-[var(--border)]">
         <ConversationList />
       </div>
-      {/* Main area — Empty state */}
-      <div className="flex-1 flex flex-col items-center justify-center bg-[#f0f2f5] dark:bg-[var(--chat-panel-bg)] animate-page-enter">
+      {/* Main area — Empty state (hidden on mobile) */}
+      <div className="hidden md:flex flex-1 flex-col items-center justify-center bg-[#f0f2f5] dark:bg-[var(--chat-panel-bg)] animate-page-enter">
         <div className="max-w-md w-full text-center space-y-8 px-8">
           {/* STICK logo animated */}
           <div className="flex flex-col items-center gap-4">

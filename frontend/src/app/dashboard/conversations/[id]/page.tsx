@@ -14,12 +14,12 @@ export default function ConversationPage({
 
   return (
     <div className="flex h-full w-full">
-      {/* Sidebar */}
-      <div className="w-[380px] flex-shrink-0 bg-white dark:bg-[var(--card)] border-r border-[#e9edef] dark:border-[var(--border)]">
+      {/* Sidebar — hidden on mobile, visible on desktop */}
+      <div className="hidden md:block w-[380px] flex-shrink-0 bg-white dark:bg-[var(--card)] border-r border-[#e9edef] dark:border-[var(--border)]">
         <ConversationList activeId={conversationId} />
       </div>
-      {/* Chat */}
-      <div className="flex-1">
+      {/* Chat — full width on mobile */}
+      <div className="flex-1 w-full">
         <ChatView conversationId={conversationId} />
       </div>
     </div>

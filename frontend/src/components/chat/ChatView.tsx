@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { adminWs } from "@/lib/ws";
 import { MessageData, WsEvent, ConversationDetail } from "@/lib/types";
@@ -83,6 +84,7 @@ function MessagesSkeleton() {
 }
 
 export function ChatView({ conversationId }: { conversationId: number }) {
+  const router = useRouter();
   const [messages, setMessages] = useState<MessageData[]>([]);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [simPhone, setSimPhone] = useState("");
@@ -210,6 +212,16 @@ export function ChatView({ conversationId }: { conversationId: number }) {
       {/* ── Chat Header ────────────────────────────────── */}
       <div className="flex items-center justify-between px-5 py-3 bg-white dark:bg-[var(--card)] border-b border-[#e9edef] dark:border-[var(--border)]">
         <div className="flex items-center gap-3">
+          {/* Back button — mobile only */}
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="md:hidden flex items-center justify-center w-8 h-8 -ml-1 rounded-full hover:bg-[#f0f2f5] active:bg-[#e4e6e8] transition-colors"
+            aria-label="Volver"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#364c85" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
           {/* Avatar */}
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#364c85] to-[#5a7bc4] flex items-center justify-center flex-shrink-0 shadow-sm">
             <span className="text-white font-semibold text-sm">
