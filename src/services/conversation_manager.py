@@ -979,7 +979,6 @@ def _safe_patient_summary(paciente: dict) -> str:
         ("email", "email"),
         ("Estado del Paciente", "estado"),
         ("Tratamiento", "tratamiento"),
-        ("CONSGEN FIRMADO", "consentimiento"),
         ("SALDO PEND", "saldo_pendiente"),
         ("Proximo Turno", "proximo_turno"),
     ]
