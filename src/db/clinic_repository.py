@@ -14,7 +14,7 @@ from datetime import date, time
 from decimal import Decimal
 from typing import Optional, Sequence
 
-from sqlalchemy import and_, extract, or_, select
+from sqlalchemy import and_, extract, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.clinic_models.alineador import Alineador
@@ -449,6 +449,49 @@ class ClinicRepository:
         stmt = select(Tarifario)
         result = await self.session.execute(stmt)
         return result.scalars().all()
+
+    async def diagnose_tarifario_columns(self) -> list[dict]:
+        """Diagnostic: list actual column names/types from information_schema."""
+        stmt = text(
+            "SELECT column_name, data_type, is_nullable "
+            "FROM information_schema.columns "
+            "WHERE table_schema = 'operacional' AND table_name = 'BBDD TARIFARIO' "
+            "ORDER BY ordinal_position"
+        )
+        result = await self.session.execute(stmt)
+        return [
+            {"column": row[0], "type": row[1], "nullable": row[2]}
+            for row in result.fetchall()
+        ]
+
+    async def find_all_tariffs_raw(self) -> list[dict]:
+        """Fallback: fetch all tariffs using raw SQL (no model dependency)."""
+        stmt = text('SELECT * FROM operacional."BBDD TARIFARIO"')
+        result = await self.session.execute(stmt)
+        columns = list(result.keys())
+        return [dict(zip(columns, row)) for row in result.fetchall()]
+
+    async def find_tariff_raw(self, tratamiento: str) -> list[dict]:
+        """Fallback: search tariff by name using raw SQL."""
+        # Try exact match on "Tratamiento Detalle" first
+        stmt = text(
+            'SELECT * FROM operacional."BBDD TARIFARIO" '
+            'WHERE "Tratamiento Detalle" = :trat'
+        )
+        result = await self.session.execute(stmt, {"trat": tratamiento})
+        columns = list(result.keys())
+        rows = [dict(zip(columns, row)) for row in result.fetchall()]
+        if rows:
+            return rows
+        # If no exact match, try ILIKE
+        stmt2 = text(
+            'SELECT * FROM operacional."BBDD TARIFARIO" '
+            "WHERE \"Tratamiento Detalle\" ILIKE :trat "
+            "OR \"Tratamiento\" ILIKE :trat"
+        )
+        result2 = await self.session.execute(stmt2, {"trat": f"%{tratamiento}%"})
+        columns2 = list(result2.keys())
+        return [dict(zip(columns2, row)) for row in result2.fetchall()]
 
     # =========================================================================
     # HORARIOS DE ATENCION

@@ -745,14 +745,46 @@ class ConversationManager:
 
     async def _tool_consultar_tarifario(self, inp: dict) -> dict:
         tratamiento = inp["tratamiento"]
-        tarifa = await self.clinic_repo.find_tariff(tratamiento)
-        if tarifa:
-            return {"status": "ok", "tarifas": [tarifa.to_appsheet_dict()]}
-        # Si no encontró exacta, retornar todas para que Claude elija
-        all_tarifas = await self.clinic_repo.find_all_tariffs()
-        if all_tarifas:
-            return {"status": "ok", "tarifas": [t.to_appsheet_dict() for t in all_tarifas]}
-        return {"status": "not_found", "mensaje": f"No se encontró tarifa para '{tratamiento}'"}
+        try:
+            tarifa = await self.clinic_repo.find_tariff(tratamiento)
+            if tarifa:
+                return {"status": "ok", "tarifas": [tarifa.to_appsheet_dict()]}
+            # Si no encontró exacta, retornar todas para que Claude elija
+            all_tarifas = await self.clinic_repo.find_all_tariffs()
+            if all_tarifas:
+                return {"status": "ok", "tarifas": [t.to_appsheet_dict() for t in all_tarifas]}
+            return {"status": "not_found", "mensaje": f"No se encontró tarifa para '{tratamiento}'"}
+        except Exception as model_err:
+            # Model query failed — rollback and use raw SQL fallback
+            import traceback
+            logger.error(
+                "tarifario_model_error",
+                error=str(model_err),
+                traceback=traceback.format_exc(),
+            )
+            await self._clinic_db.rollback()
+
+            # Diagnostic: log actual table columns
+            try:
+                cols = await self.clinic_repo.diagnose_tarifario_columns()
+                logger.warning("tarifario_actual_columns", columns=cols)
+            except Exception as diag_err:
+                logger.error("tarifario_diag_error", error=str(diag_err))
+                await self._clinic_db.rollback()
+
+            # Raw SQL fallback
+            try:
+                rows = await self.clinic_repo.find_tariff_raw(tratamiento)
+                if rows:
+                    return {"status": "ok", "tarifas": rows}
+                all_rows = await self.clinic_repo.find_all_tariffs_raw()
+                if all_rows:
+                    return {"status": "ok", "tarifas": all_rows}
+                return {"status": "not_found", "mensaje": f"No se encontró tarifa para '{tratamiento}'"}
+            except Exception as raw_err:
+                logger.error("tarifario_raw_error", error=str(raw_err))
+                await self._clinic_db.rollback()
+                return {"status": "error", "error": f"Error consultando tarifario: {raw_err}"}
 
     async def _tool_consultar_presupuesto(self, inp: dict) -> dict:
         paciente_id = inp["paciente_id"]
