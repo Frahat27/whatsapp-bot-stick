@@ -69,6 +69,7 @@ class Settings(BaseSettings):
 
     # --- Google Sheets ---
     google_sheets_credentials_file: str = "credentials/franco.json"
+    google_sheets_credentials_json: str = ""  # JSON string del service account (para Docker/Railway)
     google_sheets_spreadsheet_id: str = "1Ql5Li8PdpZGg7obxmEjoyH1h-rmjQw0F_WOnwn34GRU"
 
     # --- Admin Config ---

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any, Optional
 
 from sqlalchemy import Integer, Interval, String, Text
@@ -28,7 +29,7 @@ class TipoTratamiento(ClinicBase):
     status_servicio: Mapped[Optional[str]] = mapped_column(
         "Status Servicio", Text
     )
-    duracion_turno: Mapped[Optional[str]] = mapped_column(
+    duracion_turno: Mapped[Optional[timedelta]] = mapped_column(
         "Duracion Turno", Interval
     )
 
@@ -39,7 +40,10 @@ class TipoTratamiento(ClinicBase):
             "ID TIPO TRATAMIENTO": self.id_tipo_tratamiento,
             "TIPO DE TRATAMIENTO": self.tipo_tratamiento,
             "Status Servicio": self.status_servicio,
-            "Duracion Turno": str(self.duracion_turno) if self.duracion_turno else None,
+            "Duracion Turno": (
+                int(self.duracion_turno.total_seconds() / 60)
+                if self.duracion_turno else None
+            ),
         }
 
     def __repr__(self) -> str:

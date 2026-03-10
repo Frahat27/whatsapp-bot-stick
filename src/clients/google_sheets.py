@@ -17,6 +17,7 @@ L: Notas Resolución    (manual)
 """
 
 import asyncio
+import json
 from typing import Optional
 
 import gspread
@@ -53,12 +54,26 @@ PROFESIONAL_MAP = {
 
 
 def _get_gspread_client() -> gspread.Client:
-    """Crea un cliente gspread autenticado con service account."""
+    """
+    Crea un cliente gspread autenticado con service account.
+
+    Prioridad:
+    1. GOOGLE_SHEETS_CREDENTIALS_JSON env var (Docker/Railway)
+    2. credentials/franco.json file (local dev)
+    """
     settings = get_settings()
-    creds = Credentials.from_service_account_file(
-        settings.google_sheets_credentials_file,
-        scopes=SCOPES,
-    )
+
+    if settings.google_sheets_credentials_json:
+        # Production: JSON string desde variable de entorno
+        creds_info = json.loads(settings.google_sheets_credentials_json)
+        creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
+    else:
+        # Local dev: archivo de credenciales
+        creds = Credentials.from_service_account_file(
+            settings.google_sheets_credentials_file,
+            scopes=SCOPES,
+        )
+
     return gspread.authorize(creds)
 
 
