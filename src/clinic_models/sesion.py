@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, time, timedelta
 from typing import Any, Optional
 
-from sqlalchemy import Date, ForeignKey, Interval, String, Text, Time
+from sqlalchemy import Date, Interval, String, Text, Time
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.clinic_models.base import ClinicBase
@@ -22,7 +22,6 @@ class Sesion(ClinicBase):
     )
     id_paciente: Mapped[Optional[str]] = mapped_column(
         "ID PACIENTE", String(50),
-        ForeignKey('operacional."BBDD PACIENTES"."ID Paciente"'),
     )
     paciente: Mapped[str] = mapped_column(
         "Paciente", String(200), nullable=False
