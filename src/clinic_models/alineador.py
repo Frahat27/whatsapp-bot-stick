@@ -78,6 +78,12 @@ class Alineador(ClinicBase):
     identificador: Mapped[Optional[str]] = mapped_column(
         "IDENTIFICADOR", Text
     )
+    un_p_tres_p: Mapped[Optional[str]] = mapped_column(
+        "1P/3P", Text
+    )
+    id_paciente: Mapped[Optional[str]] = mapped_column(
+        "ID PACIENTE", Text
+    )
 
     def to_appsheet_dict(self) -> dict[str, Any]:
         """Dict con nombres exactos de AppSheet."""
@@ -108,6 +114,8 @@ class Alineador(ClinicBase):
                 if self.fecha_update else None
             ),
             "IDENTIFICADOR": self.identificador,
+            "1P/3P": self.un_p_tres_p,
+            "ID PACIENTE": self.id_paciente,
         }
 
     def __repr__(self) -> str:

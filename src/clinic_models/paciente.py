@@ -54,9 +54,7 @@ class Paciente(ClinicBase):
     notas: Mapped[Optional[str]] = mapped_column(
         "Notas", Text
     )
-    consgen_firmado: Mapped[Optional[str]] = mapped_column(
-        "CONSGEN FIRMADO", String(200), default=""
-    )
+    # NOTA: "CONSGEN FIRMADO" (ordinal 12) fue eliminada de la DB. NO incluir.
 
     def to_appsheet_dict(self) -> dict[str, Any]:
         """Dict con nombres exactos de AppSheet (para backward compat)."""
@@ -79,7 +77,6 @@ class Paciente(ClinicBase):
         d["Fuente de Captacion"] = self.fuente_captacion
         d["Referido"] = self.referido
         d["Notas"] = self.notas
-        d["CONSGEN FIRMADO"] = self.consgen_firmado
         return d
 
     def __repr__(self) -> str:

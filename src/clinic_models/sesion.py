@@ -57,19 +57,11 @@ class Sesion(ClinicBase):
     observaciones: Mapped[Optional[str]] = mapped_column(
         "Observaciones", Text
     )
-    solapamiento: Mapped[Optional[str]] = mapped_column(
-        "Solapamiento turnos", String(200)
-    )
+    # NOTA: "Solapamiento turnos" (ord 14), "Telefono (Whatsapp)" (ord 16),
+    # "Email" (ord 17) fueron eliminadas de la DB. NO incluir.
     fecha_creacion: Mapped[Optional[date]] = mapped_column(
         "Fecha Creacion", Date, server_default="CURRENT_DATE"
     )
-    telefono: Mapped[Optional[str]] = mapped_column(
-        "Telefono (Whatsapp)", String(30)
-    )
-    email_sesion: Mapped[Optional[str]] = mapped_column(
-        "Email", String(200)
-    )
-    # Campos nuevos (futuro)
     consultorio: Mapped[Optional[str]] = mapped_column(
         "Consultorio", String(50), default="SALA 1"
     )
@@ -105,13 +97,10 @@ class Sesion(ClinicBase):
             "Estado de Sesion": self.estado,
             "Descripcion de la sesion": self.descripcion,
             "Observaciones": self.observaciones,
-            "Solapamiento turnos": self.solapamiento,
             "Fecha Creacion": (
                 self.fecha_creacion.strftime("%m/%d/%Y")
                 if self.fecha_creacion else None
             ),
-            "Telefono (Whatsapp)": self.telefono,
-            "Email": self.email_sesion,
             "Consultorio": self.consultorio,
             "Sede": self.sede,
         }
