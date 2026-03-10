@@ -54,7 +54,7 @@ class TestChannelPanel:
         mock_msg.content = "Test"
         mock_msg.created_at = "2026-03-07"
 
-        manager = ConversationManager(mock_db)
+        manager = ConversationManager(mock_db, MagicMock())
 
         with patch.object(manager, "_save_message", new_callable=AsyncMock, return_value=mock_msg), \
              patch.object(manager, "_identify_contact", new_callable=AsyncMock, return_value={"tipo_contacto": "nuevo", "telefono": "1155551234"}), \
@@ -116,7 +116,7 @@ class TestChannelPanel:
         mock_msg.content = "Test"
         mock_msg.created_at = "2026-03-07"
 
-        manager = ConversationManager(mock_db)
+        manager = ConversationManager(mock_db, MagicMock())
 
         with patch.object(manager, "_save_message", new_callable=AsyncMock, return_value=mock_msg), \
              patch.object(manager, "_identify_contact", new_callable=AsyncMock, return_value={"tipo_contacto": "nuevo", "telefono": "1155551234"}), \
@@ -154,7 +154,7 @@ class TestChannelPanel:
         async def test_callback(data: dict):
             callback_data.append(data)
 
-        manager = ConversationManager(mock_db, tool_call_callback=test_callback)
+        manager = ConversationManager(mock_db, MagicMock(), tool_call_callback=test_callback)
         manager._current_conversation_id = 1
 
         # Mock un tool handler
@@ -175,7 +175,7 @@ class TestChannelPanel:
         mock_db.flush = AsyncMock()
         mock_db.add = MagicMock()
 
-        manager = ConversationManager(mock_db, tool_call_callback=None)
+        manager = ConversationManager(mock_db, MagicMock(), tool_call_callback=None)
         manager._current_conversation_id = 1
 
         with patch.object(manager, "_tool_buscar_paciente", new_callable=AsyncMock, return_value={"status": "found", "paciente": {}}), \
@@ -192,7 +192,7 @@ class TestChannelPanel:
         mock_db.flush = AsyncMock()
         mock_db.add = MagicMock()
 
-        manager = ConversationManager(mock_db)
+        manager = ConversationManager(mock_db, MagicMock())
         manager._current_conversation_id = 1
 
         with patch.object(manager, "_save_tool_call_to_db", new_callable=AsyncMock):

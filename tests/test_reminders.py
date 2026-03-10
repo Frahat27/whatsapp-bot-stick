@@ -4,7 +4,7 @@ Tests para el sistema de recordatorios programados.
 Cubre:
 - Formateo de mensajes (sin DB, sin API)
 - Modelo SentReminder y constraint UNIQUE (con DB rollback)
-- Flujo de recordatorio de turno (mocks AppSheet + WhatsApp)
+- Flujo de recordatorio de turno (mocks ClinicRepository + WhatsApp)
 - Flujo de seguimiento de leads (mocks)
 - Helper proactive_message
 - Scheduler setup y distributed lock
@@ -43,6 +43,54 @@ from src.services.reminder_service import (
     process_google_review_requests,
     process_lead_followups,
 )
+
+
+# =========================================================================
+# HELPERS PARA MOCKS DE ClinicRepository
+# =========================================================================
+
+def _make_clinic_mocks(mock_repo):
+    """
+    Construye el mock de get_clinic_session_factory que retorna un
+    async context manager cuyo ClinicRepository es mock_repo.
+
+    Retorna (mock_clinic_factory_func, mock_repo) para usar con patch.
+
+    Uso:
+        mock_repo = AsyncMock()
+        mock_clinic_factory, _ = _make_clinic_mocks(mock_repo)
+        with patch("src.services.reminder_service.get_clinic_session_factory",
+                    return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository",
+                    return_value=mock_repo):
+            ...
+    """
+    mock_clinic_db = AsyncMock()
+    mock_clinic_factory = MagicMock()
+    mock_clinic_factory.return_value.__aenter__ = AsyncMock(return_value=mock_clinic_db)
+    mock_clinic_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    return mock_clinic_factory
+
+
+def _make_session_model(data: dict) -> MagicMock:
+    """Crea un mock de modelo Sesion con to_appsheet_dict()."""
+    model = MagicMock()
+    model.to_appsheet_dict.return_value = data
+    return model
+
+
+def _make_lead_model(data: dict) -> MagicMock:
+    """Crea un mock de modelo Lead con to_appsheet_dict()."""
+    model = MagicMock()
+    model.to_appsheet_dict.return_value = data
+    return model
+
+
+def _make_patient_model(data: dict) -> MagicMock:
+    """Crea un mock de modelo Paciente con to_appsheet_dict()."""
+    model = MagicMock()
+    model.to_appsheet_dict.return_value = data
+    return model
 
 
 # =========================================================================
@@ -317,17 +365,21 @@ class TestResolvePatientPhone:
         assert phone == "1199887766"
 
     @pytest.mark.asyncio
-    async def test_phone_from_appsheet_fallback(self, db_session):
-        """Si no hay datos locales, consultar AppSheet."""
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[{
-            "ID Paciente": "PAT-003",
-            "Telefono (Whatsapp)": "+5491155443322",
-        }])
+    async def test_phone_from_cloud_sql_fallback(self, db_session):
+        """Si no hay datos locales, consultar Cloud SQL via ClinicRepository."""
+        mock_repo = AsyncMock()
+        mock_paciente = MagicMock()
+        mock_paciente.telefono = "+5491155443322"
+        mock_repo.find_patient_by_id = AsyncMock(return_value=mock_paciente)
+
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         with patch(
-            "src.services.reminder_service.get_appsheet_client",
-            return_value=mock_appsheet,
+            "src.services.reminder_service.get_clinic_session_factory",
+            return_value=mock_clinic_factory,
+        ), patch(
+            "src.services.reminder_service.ClinicRepository",
+            return_value=mock_repo,
         ):
             phone = await _resolve_patient_phone(
                 db_session,
@@ -339,12 +391,17 @@ class TestResolvePatientPhone:
     @pytest.mark.asyncio
     async def test_phone_not_found_returns_none(self, db_session):
         """Si no se encuentra telefono en ninguna fuente, retorna None."""
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[])
+        mock_repo = AsyncMock()
+        mock_repo.find_patient_by_id = AsyncMock(return_value=None)
+
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         with patch(
-            "src.services.reminder_service.get_appsheet_client",
-            return_value=mock_appsheet,
+            "src.services.reminder_service.get_clinic_session_factory",
+            return_value=mock_clinic_factory,
+        ), patch(
+            "src.services.reminder_service.ClinicRepository",
+            return_value=mock_repo,
         ):
             phone = await _resolve_patient_phone(
                 db_session,
@@ -423,15 +480,21 @@ class TestAppointmentReminderFlow:
         """Happy path: sesion de mañana → envia recordatorio."""
         tomorrow = date.today() + timedelta(days=1)
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[{
+        session_data = {
             "ID Sesion": "SES-001",
             "ID PACIENTE": "PAT-001",
             "Paciente": "Garcia, Juan",
             "Hora Sesion": "15:00:00",
             "Profesional Asignado": "Hatzerian, Cynthia",
             "Telefono (Whatsapp)": "+5491123266671",
-        }])
+        }
+        mock_session_model = _make_session_model(session_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_sessions_by_date_and_status = AsyncMock(
+            return_value=[mock_session_model],
+        )
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_send = AsyncMock(return_value={"status": "ok", "wa_message_id": "wamid.123"})
 
@@ -439,13 +502,11 @@ class TestAppointmentReminderFlow:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=tomorrow - timedelta(days=1)), \
-             patch("src.services.reminder_service.to_appsheet_date") as mock_to_date, \
              patch("src.db.session.get_session_factory", return_value=mock_factory), \
              patch("src.services.proactive_message.send_text", mock_send):
-
-            mock_to_date.return_value = tomorrow.strftime("%m/%d/%Y")
 
             result = await process_appointment_reminders()
 
@@ -478,26 +539,30 @@ class TestAppointmentReminderFlow:
 
         tomorrow = date.today() + timedelta(days=1)
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[{
+        session_data = {
             "ID Sesion": "SES-002",
             "ID PACIENTE": "PAT-001",
             "Paciente": "Garcia, Juan",
             "Hora Sesion": "15:00:00",
             "Profesional Asignado": "Hatzerian, Cynthia",
             "Telefono (Whatsapp)": "+5491123266671",
-        }])
+        }
+        mock_session_model = _make_session_model(session_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_sessions_by_date_and_status = AsyncMock(
+            return_value=[mock_session_model],
+        )
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_factory = MagicMock()
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=tomorrow - timedelta(days=1)), \
-             patch("src.services.reminder_service.to_appsheet_date") as mock_to_date, \
              patch("src.db.session.get_session_factory", return_value=mock_factory):
-
-            mock_to_date.return_value = tomorrow.strftime("%m/%d/%Y")
 
             result = await process_appointment_reminders()
 
@@ -509,15 +574,21 @@ class TestAppointmentReminderFlow:
         """WhatsApp falla → status=FAILED."""
         tomorrow = date.today() + timedelta(days=1)
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[{
+        session_data = {
             "ID Sesion": "SES-003",
             "ID PACIENTE": "PAT-001",
             "Paciente": "Garcia, Juan",
             "Hora Sesion": "15:00:00",
             "Profesional Asignado": "Hatzerian, Cynthia",
             "Telefono (Whatsapp)": "+5491123266671",
-        }])
+        }
+        mock_session_model = _make_session_model(session_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_sessions_by_date_and_status = AsyncMock(
+            return_value=[mock_session_model],
+        )
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_send = AsyncMock(return_value={"status": "error", "error": "Token expired"})
 
@@ -525,13 +596,11 @@ class TestAppointmentReminderFlow:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=tomorrow - timedelta(days=1)), \
-             patch("src.services.reminder_service.to_appsheet_date") as mock_to_date, \
              patch("src.db.session.get_session_factory", return_value=mock_factory), \
              patch("src.services.proactive_message.send_text", mock_send):
-
-            mock_to_date.return_value = tomorrow.strftime("%m/%d/%Y")
 
             result = await process_appointment_reminders()
 
@@ -549,14 +618,13 @@ class TestAppointmentReminderFlow:
         """Sin sesiones para mañana → 0 envios."""
         tomorrow = date.today() + timedelta(days=1)
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[])
+        mock_repo = AsyncMock()
+        mock_repo.find_sessions_by_date_and_status = AsyncMock(return_value=[])
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
-             patch("src.services.reminder_service.today_argentina", return_value=tomorrow - timedelta(days=1)), \
-             patch("src.services.reminder_service.to_appsheet_date") as mock_to_date:
-
-            mock_to_date.return_value = tomorrow.strftime("%m/%d/%Y")
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
+             patch("src.services.reminder_service.today_argentina", return_value=tomorrow - timedelta(days=1)):
 
             result = await process_appointment_reminders()
 
@@ -577,19 +645,23 @@ class TestLeadFollowupFlow:
         """Lead Nuevo hace 3 dias → envia primer seguimiento."""
         today = date.today()
 
-        mock_appsheet = AsyncMock()
-        # day3 find retorna un lead, day7 retorna vacio
-        mock_appsheet.find = AsyncMock(side_effect=[
-            [{  # day 3 leads
-                "ID Lead": "LEAD-42",
-                "Apellido y Nombre": "Perez, Maria",
-                "Telefono (Whatsapp)": "+5491199887766",
-                "Fecha Creacion": (today - timedelta(days=3)).strftime("%m/%d/%Y"),
-                "Estado del Lead (Temp)": "Nuevo",
-            }],
-            [],  # day 7 leads
+        day3_lead_data = {
+            "ID Lead": "LEAD-42",
+            "Apellido y Nombre": "Perez, Maria",
+            "Telefono (Whatsapp)": "+5491199887766",
+            "Fecha Creacion": (today - timedelta(days=3)).strftime("%m/%d/%Y"),
+            "Estado del Lead (Temp)": "Nuevo",
+        }
+        mock_day3_model = _make_lead_model(day3_lead_data)
+
+        mock_repo = AsyncMock()
+        # find_leads_by_status_and_date is called twice: day3 then day7
+        mock_repo.find_leads_by_status_and_date = AsyncMock(side_effect=[
+            [mock_day3_model],  # day 3 leads
+            [],                 # day 7 leads
         ])
-        mock_appsheet.edit = AsyncMock(return_value=[])
+        mock_repo.update_lead_status = AsyncMock(return_value=None)
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_send = AsyncMock(return_value={"status": "ok", "wa_message_id": "wamid.456"})
 
@@ -597,13 +669,11 @@ class TestLeadFollowupFlow:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=today), \
-             patch("src.services.reminder_service.to_appsheet_date") as mock_to_date, \
              patch("src.db.session.get_session_factory", return_value=mock_factory), \
              patch("src.services.proactive_message.send_text", mock_send):
-
-            mock_to_date.side_effect = lambda d: d.strftime("%m/%d/%Y")
 
             result = await process_lead_followups()
 
@@ -640,28 +710,30 @@ class TestLeadFollowupFlow:
 
         today = date.today()
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(side_effect=[
-            [{
-                "ID Lead": "LEAD-99",
-                "Apellido y Nombre": "Lopez, Ana",
-                "Telefono (Whatsapp)": "+5491199887766",
-                "Fecha Creacion": (today - timedelta(days=3)).strftime("%m/%d/%Y"),
-                "Estado del Lead (Temp)": "Nuevo",
-            }],
-            [],
+        day3_lead_data = {
+            "ID Lead": "LEAD-99",
+            "Apellido y Nombre": "Lopez, Ana",
+            "Telefono (Whatsapp)": "+5491199887766",
+            "Fecha Creacion": (today - timedelta(days=3)).strftime("%m/%d/%Y"),
+            "Estado del Lead (Temp)": "Nuevo",
+        }
+        mock_day3_model = _make_lead_model(day3_lead_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_leads_by_status_and_date = AsyncMock(side_effect=[
+            [mock_day3_model],  # day 3 leads
+            [],                 # day 7 leads
         ])
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_factory = MagicMock()
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=today), \
-             patch("src.services.reminder_service.to_appsheet_date") as mock_to_date, \
              patch("src.db.session.get_session_factory", return_value=mock_factory):
-
-            mock_to_date.side_effect = lambda d: d.strftime("%m/%d/%Y")
 
             result = await process_lead_followups()
 
@@ -680,18 +752,22 @@ class TestLeadFollowupFlow:
         """Lead Contactado Frio hace 7 dias → envia segundo seguimiento."""
         today = date.today()
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(side_effect=[
-            [],  # day 3 leads
-            [{   # day 7 leads
-                "ID Lead": "LEAD-55",
-                "Apellido y Nombre": "Gomez, Carlos",
-                "Telefono (Whatsapp)": "+5491177665544",
-                "Fecha Creacion": (today - timedelta(days=7)).strftime("%m/%d/%Y"),
-                "Estado del Lead (Temp)": "Contactado Frio",
-            }],
+        day7_lead_data = {
+            "ID Lead": "LEAD-55",
+            "Apellido y Nombre": "Gomez, Carlos",
+            "Telefono (Whatsapp)": "+5491177665544",
+            "Fecha Creacion": (today - timedelta(days=7)).strftime("%m/%d/%Y"),
+            "Estado del Lead (Temp)": "Contactado Frio",
+        }
+        mock_day7_model = _make_lead_model(day7_lead_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_leads_by_status_and_date = AsyncMock(side_effect=[
+            [],                 # day 3 leads
+            [mock_day7_model],  # day 7 leads
         ])
-        mock_appsheet.edit = AsyncMock(return_value=[])
+        mock_repo.update_lead_status = AsyncMock(return_value=None)
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_send = AsyncMock(return_value={"status": "ok", "wa_message_id": "wamid.789"})
 
@@ -699,13 +775,11 @@ class TestLeadFollowupFlow:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=today), \
-             patch("src.services.reminder_service.to_appsheet_date") as mock_to_date, \
              patch("src.db.session.get_session_factory", return_value=mock_factory), \
              patch("src.services.proactive_message.send_text", mock_send):
-
-            mock_to_date.side_effect = lambda d: d.strftime("%m/%d/%Y")
 
             result = await process_lead_followups()
 
@@ -719,11 +793,8 @@ class TestLeadFollowupFlow:
         assert reminder.reminder_type == ReminderType.LEAD_FOLLOWUP_DAY7
         assert reminder.attempt == 2
 
-        # Verificar que actualizo estado en AppSheet
-        mock_appsheet.edit.assert_called_once()
-        edit_args = mock_appsheet.edit.call_args
-        assert edit_args[0][0] == "BBDD LEADS"
-        assert edit_args[0][1][0]["Estado del Lead (Temp)"] == "Cerrada Perdida"
+        # Verificar que actualizo estado via ClinicRepository
+        mock_repo.update_lead_status.assert_called_once_with("LEAD-55", "Cerrada Perdida")
 
 
 # =========================================================================
@@ -1076,8 +1147,7 @@ class TestAppointmentConfirmationFlow:
         future_date = date.today() + timedelta(days=5)
         future_appsheet = future_date.strftime("%m/%d/%Y")
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[{
+        session_data = {
             "ID Sesion": "SES-CONF-001",
             "ID PACIENTE": "PAT-001",
             "Paciente": "Garcia, Juan",
@@ -1085,7 +1155,14 @@ class TestAppointmentConfirmationFlow:
             "Profesional Asignado": "Hatzerian, Cynthia",
             "Fecha de Sesion": future_appsheet,
             "Telefono (Whatsapp)": "+5491123266671",
-        }])
+        }
+        mock_session_model = _make_session_model(session_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_planned_future_sessions = AsyncMock(
+            return_value=[mock_session_model],
+        )
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_send = AsyncMock(return_value={"status": "ok", "wa_message_id": "wamid.conf1"})
 
@@ -1093,7 +1170,8 @@ class TestAppointmentConfirmationFlow:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=date.today()), \
              patch("src.db.session.get_session_factory", return_value=mock_factory), \
              patch("src.services.proactive_message.send_text", mock_send):
@@ -1126,8 +1204,7 @@ class TestAppointmentConfirmationFlow:
 
         future_date = date.today() + timedelta(days=5)
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[{
+        session_data = {
             "ID Sesion": "SES-CONF-002",
             "ID PACIENTE": "PAT-001",
             "Paciente": "Garcia, Juan",
@@ -1135,13 +1212,21 @@ class TestAppointmentConfirmationFlow:
             "Profesional Asignado": "Hatzerian, Cynthia",
             "Fecha de Sesion": future_date.strftime("%m/%d/%Y"),
             "Telefono (Whatsapp)": "+5491123266671",
-        }])
+        }
+        mock_session_model = _make_session_model(session_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_planned_future_sessions = AsyncMock(
+            return_value=[mock_session_model],
+        )
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_factory = MagicMock()
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=date.today()), \
              patch("src.db.session.get_session_factory", return_value=mock_factory):
 
@@ -1151,23 +1236,14 @@ class TestAppointmentConfirmationFlow:
         assert result["skipped"] == 1
 
     @pytest.mark.asyncio
-    async def test_skips_past_sessions(self):
-        """Sesiones pasadas → no enviar confirmacion."""
-        past_date = date.today() - timedelta(days=2)
-        past_appsheet = past_date.strftime("%m/%d/%Y")
+    async def test_no_future_sessions_does_nothing(self):
+        """Sin sesiones futuras → 0 envios."""
+        mock_repo = AsyncMock()
+        mock_repo.find_planned_future_sessions = AsyncMock(return_value=[])
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[{
-            "ID Sesion": "SES-PAST-001",
-            "ID PACIENTE": "PAT-001",
-            "Paciente": "Garcia, Juan",
-            "Hora Sesion": "15:00:00",
-            "Profesional Asignado": "Hatzerian, Cynthia",
-            "Fecha de Sesion": past_appsheet,
-            "Telefono (Whatsapp)": "+5491123266671",
-        }])
-
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=date.today()):
 
             result = await process_appointment_confirmations()
@@ -1189,14 +1265,20 @@ class TestBirthdayGreetingFlow:
         """Paciente con cumpleaños hoy → envia saludo."""
         today = date(2026, 3, 15)
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[{
+        patient_data = {
             "ID Paciente": "PAT-BD-001",
             "Paciente": "Garcia, Juan",
             "Telefono (Whatsapp)": "+5491123266671",
             "Estado del Paciente": "Activo",
-            "Fecha Nacimiento": "03/15/1990",  # mismo mes/dia que today
-        }])
+            "Fecha Nacimiento": "03/15/1990",
+        }
+        mock_patient_model = _make_patient_model(patient_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_active_patients_with_birthday = AsyncMock(
+            return_value=[mock_patient_model],
+        )
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_send = AsyncMock(return_value={"status": "ok", "wa_message_id": "wamid.bd1"})
 
@@ -1204,7 +1286,8 @@ class TestBirthdayGreetingFlow:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=today), \
              patch("src.db.session.get_session_factory", return_value=mock_factory), \
              patch("src.services.proactive_message.send_text", mock_send):
@@ -1224,19 +1307,16 @@ class TestBirthdayGreetingFlow:
         assert "cumpleaños" in reminder.message_sent
 
     @pytest.mark.asyncio
-    async def test_skips_non_birthday(self):
-        """Paciente con cumpleaños en otro dia → skip."""
+    async def test_no_birthdays_today(self):
+        """Sin cumpleaños hoy → 0 envios."""
         today = date(2026, 3, 15)
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[{
-            "ID Paciente": "PAT-BD-002",
-            "Paciente": "Garcia, Juan",
-            "Telefono (Whatsapp)": "+5491123266671",
-            "Fecha Nacimiento": "06/20/1990",  # Junio 20, no hoy
-        }])
+        mock_repo = AsyncMock()
+        mock_repo.find_active_patients_with_birthday = AsyncMock(return_value=[])
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=today):
 
             result = await process_birthday_greetings()
@@ -1260,19 +1340,26 @@ class TestBirthdayGreetingFlow:
         db_session.add(existing)
         await db_session.flush()
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[{
+        patient_data = {
             "ID Paciente": "PAT-BD-003",
             "Paciente": "Garcia, Juan",
             "Telefono (Whatsapp)": "+5491123266671",
             "Fecha Nacimiento": "03/15/1990",
-        }])
+        }
+        mock_patient_model = _make_patient_model(patient_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_active_patients_with_birthday = AsyncMock(
+            return_value=[mock_patient_model],
+        )
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_factory = MagicMock()
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=today), \
              patch("src.db.session.get_session_factory", return_value=mock_factory):
 
@@ -1280,26 +1367,6 @@ class TestBirthdayGreetingFlow:
 
         assert result["sent"] == 0
         assert result["skipped"] == 1
-
-    @pytest.mark.asyncio
-    async def test_skips_patient_without_birthday(self):
-        """Paciente sin Fecha Nacimiento → skip."""
-        today = date(2026, 3, 15)
-
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[{
-            "ID Paciente": "PAT-BD-004",
-            "Paciente": "Garcia, Juan",
-            "Telefono (Whatsapp)": "+5491123266671",
-            "Fecha Nacimiento": "",  # Vacio
-        }])
-
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
-             patch("src.services.reminder_service.today_argentina", return_value=today):
-
-            result = await process_birthday_greetings()
-
-        assert result["sent"] == 0
 
 
 # =========================================================================
@@ -1316,28 +1383,34 @@ class TestAlignerReminderFlow:
         last_realized_date = today - timedelta(days=15)  # 15 dias atras
         next_planned_date = today + timedelta(days=15)  # 30 dias entre sesiones
 
-        mock_appsheet = AsyncMock()
-        # Primer find: sesiones futuras Planificada/Confirmada
-        # Segundo find: sesiones realizadas del paciente
-        mock_appsheet.find = AsyncMock(side_effect=[
-            [{  # Proxima sesion planificada
-                "ID Sesion": "SES-AL-NEXT",
-                "ID PACIENTE": "PAT-AL-001",
-                "Paciente": "Garcia, Juan",
-                "Tratamiento": "Alineadores",
-                "Fecha de Sesion": next_planned_date.strftime("%m/%d/%Y"),
-                "Estado de Sesion": "Planificada",
-                "Telefono (Whatsapp)": "+5491123266671",
-            }],
-            [{  # Ultima sesion realizada
-                "ID Sesion": "SES-AL-LAST",
-                "ID PACIENTE": "PAT-AL-001",
-                "Paciente": "Garcia, Juan",
-                "Tratamiento": "Alineadores",
-                "Fecha de Sesion": last_realized_date.strftime("%m/%d/%Y"),
-                "Estado de Sesion": "Realizada",
-            }],
-        ])
+        next_session_data = {
+            "ID Sesion": "SES-AL-NEXT",
+            "ID PACIENTE": "PAT-AL-001",
+            "Paciente": "Garcia, Juan",
+            "Tratamiento": "Alineadores",
+            "Fecha de Sesion": next_planned_date.strftime("%m/%d/%Y"),
+            "Estado de Sesion": "Planificada",
+            "Telefono (Whatsapp)": "+5491123266671",
+        }
+        last_session_data = {
+            "ID Sesion": "SES-AL-LAST",
+            "ID PACIENTE": "PAT-AL-001",
+            "Paciente": "Garcia, Juan",
+            "Tratamiento": "Alineadores",
+            "Fecha de Sesion": last_realized_date.strftime("%m/%d/%Y"),
+            "Estado de Sesion": "Realizada",
+        }
+        mock_next_model = _make_session_model(next_session_data)
+        mock_last_model = _make_session_model(last_session_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_aligner_sessions_active = AsyncMock(
+            return_value=[mock_next_model],
+        )
+        mock_repo.find_aligner_sessions_realized = AsyncMock(
+            return_value=[mock_last_model],
+        )
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_send = AsyncMock(return_value={"status": "ok", "wa_message_id": "wamid.al1"})
 
@@ -1345,7 +1418,8 @@ class TestAlignerReminderFlow:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=today), \
              patch("src.db.session.get_session_factory", return_value=mock_factory), \
              patch("src.services.proactive_message.send_text", mock_send):
@@ -1371,26 +1445,34 @@ class TestAlignerReminderFlow:
         last_realized_date = today - timedelta(days=12)
         next_planned_date = last_realized_date + timedelta(days=24)  # 24 dias entre sesiones
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(side_effect=[
-            [{
-                "ID Sesion": "SES-AL-SHORT-NEXT",
-                "ID PACIENTE": "PAT-AL-002",
-                "Paciente": "Lopez, Maria",
-                "Tratamiento": "Alineadores",
-                "Fecha de Sesion": next_planned_date.strftime("%m/%d/%Y"),
-                "Estado de Sesion": "Planificada",
-                "Telefono (Whatsapp)": "+5491199887766",
-            }],
-            [{
-                "ID Sesion": "SES-AL-SHORT-LAST",
-                "ID PACIENTE": "PAT-AL-002",
-                "Paciente": "Lopez, Maria",
-                "Tratamiento": "Alineadores",
-                "Fecha de Sesion": last_realized_date.strftime("%m/%d/%Y"),
-                "Estado de Sesion": "Realizada",
-            }],
-        ])
+        next_session_data = {
+            "ID Sesion": "SES-AL-SHORT-NEXT",
+            "ID PACIENTE": "PAT-AL-002",
+            "Paciente": "Lopez, Maria",
+            "Tratamiento": "Alineadores",
+            "Fecha de Sesion": next_planned_date.strftime("%m/%d/%Y"),
+            "Estado de Sesion": "Planificada",
+            "Telefono (Whatsapp)": "+5491199887766",
+        }
+        last_session_data = {
+            "ID Sesion": "SES-AL-SHORT-LAST",
+            "ID PACIENTE": "PAT-AL-002",
+            "Paciente": "Lopez, Maria",
+            "Tratamiento": "Alineadores",
+            "Fecha de Sesion": last_realized_date.strftime("%m/%d/%Y"),
+            "Estado de Sesion": "Realizada",
+        }
+        mock_next_model = _make_session_model(next_session_data)
+        mock_last_model = _make_session_model(last_session_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_aligner_sessions_active = AsyncMock(
+            return_value=[mock_next_model],
+        )
+        mock_repo.find_aligner_sessions_realized = AsyncMock(
+            return_value=[mock_last_model],
+        )
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_send = AsyncMock(return_value={"status": "ok", "wa_message_id": "wamid.al2"})
 
@@ -1398,7 +1480,8 @@ class TestAlignerReminderFlow:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=today), \
              patch("src.db.session.get_session_factory", return_value=mock_factory), \
              patch("src.services.proactive_message.send_text", mock_send):
@@ -1420,20 +1503,25 @@ class TestAlignerReminderFlow:
         today = date(2026, 3, 15)
         future = today + timedelta(days=10)
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(side_effect=[
-            [{  # Proxima sesion planificada
-                "ID Sesion": "SES-AL-NOREALIZ",
-                "ID PACIENTE": "PAT-AL-003",
-                "Paciente": "Perez, Carlos",
-                "Tratamiento": "Alineadores",
-                "Fecha de Sesion": future.strftime("%m/%d/%Y"),
-                "Estado de Sesion": "Planificada",
-            }],
-            [],  # No hay sesiones realizadas
-        ])
+        next_session_data = {
+            "ID Sesion": "SES-AL-NOREALIZ",
+            "ID PACIENTE": "PAT-AL-003",
+            "Paciente": "Perez, Carlos",
+            "Tratamiento": "Alineadores",
+            "Fecha de Sesion": future.strftime("%m/%d/%Y"),
+            "Estado de Sesion": "Planificada",
+        }
+        mock_next_model = _make_session_model(next_session_data)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        mock_repo = AsyncMock()
+        mock_repo.find_aligner_sessions_active = AsyncMock(
+            return_value=[mock_next_model],
+        )
+        mock_repo.find_aligner_sessions_realized = AsyncMock(return_value=[])
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
+
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=today):
 
             result = await process_aligner_reminders()
@@ -1459,32 +1547,41 @@ class TestAlignerReminderFlow:
         db_session.add(existing)
         await db_session.flush()
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(side_effect=[
-            [{
-                "ID Sesion": "SES-AL-DUP-NEXT",
-                "ID PACIENTE": "PAT-AL-DUP",
-                "Paciente": "Garcia, Juan",
-                "Tratamiento": "Alineadores",
-                "Fecha de Sesion": next_planned_date.strftime("%m/%d/%Y"),
-                "Estado de Sesion": "Planificada",
-                "Telefono (Whatsapp)": "+5491123266671",
-            }],
-            [{
-                "ID Sesion": "SES-AL-DUP-LAST",
-                "ID PACIENTE": "PAT-AL-DUP",
-                "Paciente": "Garcia, Juan",
-                "Tratamiento": "Alineadores",
-                "Fecha de Sesion": last_realized_date.strftime("%m/%d/%Y"),
-                "Estado de Sesion": "Realizada",
-            }],
-        ])
+        next_session_data = {
+            "ID Sesion": "SES-AL-DUP-NEXT",
+            "ID PACIENTE": "PAT-AL-DUP",
+            "Paciente": "Garcia, Juan",
+            "Tratamiento": "Alineadores",
+            "Fecha de Sesion": next_planned_date.strftime("%m/%d/%Y"),
+            "Estado de Sesion": "Planificada",
+            "Telefono (Whatsapp)": "+5491123266671",
+        }
+        last_session_data = {
+            "ID Sesion": "SES-AL-DUP-LAST",
+            "ID PACIENTE": "PAT-AL-DUP",
+            "Paciente": "Garcia, Juan",
+            "Tratamiento": "Alineadores",
+            "Fecha de Sesion": last_realized_date.strftime("%m/%d/%Y"),
+            "Estado de Sesion": "Realizada",
+        }
+        mock_next_model = _make_session_model(next_session_data)
+        mock_last_model = _make_session_model(last_session_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_aligner_sessions_active = AsyncMock(
+            return_value=[mock_next_model],
+        )
+        mock_repo.find_aligner_sessions_realized = AsyncMock(
+            return_value=[mock_last_model],
+        )
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_factory = MagicMock()
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=today), \
              patch("src.db.session.get_session_factory", return_value=mock_factory):
 
@@ -1507,15 +1604,21 @@ class TestGoogleReviewFlow:
         today = date(2026, 3, 15)
         yesterday = today - timedelta(days=1)
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[{
+        session_data = {
             "ID Sesion": "SES-RV-001",
             "ID PACIENTE": "PAT-RV-001",
             "Paciente": "Garcia, Juan",
             "Fecha de Sesion": yesterday.strftime("%m/%d/%Y"),
             "Estado de Sesion": "Realizada",
             "Telefono (Whatsapp)": "+5491123266671",
-        }])
+        }
+        mock_session_model = _make_session_model(session_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_sessions_by_date_and_status = AsyncMock(
+            return_value=[mock_session_model],
+        )
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_send = AsyncMock(return_value={"status": "ok", "wa_message_id": "wamid.rv1"})
 
@@ -1526,14 +1629,12 @@ class TestGoogleReviewFlow:
         mock_settings = MagicMock()
         mock_settings.google_maps_review_link = "https://g.page/r/CXyr_5_Wv5_7EBM/review"
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=today), \
-             patch("src.services.reminder_service.to_appsheet_date") as mock_to_date, \
              patch("src.services.reminder_service.get_settings", return_value=mock_settings), \
              patch("src.db.session.get_session_factory", return_value=mock_factory), \
              patch("src.services.proactive_message.send_text", mock_send):
-
-            mock_to_date.return_value = yesterday.strftime("%m/%d/%Y")
 
             result = await process_google_review_requests()
 
@@ -1577,15 +1678,21 @@ class TestGoogleReviewFlow:
         db_session.add(existing)
         await db_session.flush()
 
-        mock_appsheet = AsyncMock()
-        mock_appsheet.find = AsyncMock(return_value=[{
+        session_data = {
             "ID Sesion": "SES-RV-002",
             "ID PACIENTE": "PAT-RV-002",
             "Paciente": "Garcia, Juan",
             "Fecha de Sesion": yesterday.strftime("%m/%d/%Y"),
             "Estado de Sesion": "Realizada",
             "Telefono (Whatsapp)": "+5491123266671",
-        }])
+        }
+        mock_session_model = _make_session_model(session_data)
+
+        mock_repo = AsyncMock()
+        mock_repo.find_sessions_by_date_and_status = AsyncMock(
+            return_value=[mock_session_model],
+        )
+        mock_clinic_factory = _make_clinic_mocks(mock_repo)
 
         mock_factory = MagicMock()
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
@@ -1594,13 +1701,11 @@ class TestGoogleReviewFlow:
         mock_settings = MagicMock()
         mock_settings.google_maps_review_link = "https://g.page/test"
 
-        with patch("src.services.reminder_service.get_appsheet_client", return_value=mock_appsheet), \
+        with patch("src.services.reminder_service.get_clinic_session_factory", return_value=mock_clinic_factory), \
+             patch("src.services.reminder_service.ClinicRepository", return_value=mock_repo), \
              patch("src.services.reminder_service.today_argentina", return_value=today), \
-             patch("src.services.reminder_service.to_appsheet_date") as mock_to_date, \
              patch("src.services.reminder_service.get_settings", return_value=mock_settings), \
              patch("src.db.session.get_session_factory", return_value=mock_factory):
-
-            mock_to_date.return_value = yesterday.strftime("%m/%d/%Y")
 
             result = await process_google_review_requests()
 
