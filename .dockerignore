@@ -10,7 +10,7 @@ frontend/
 tests/
 docs/
 scripts/
-data/
-*.md
+README.md
+CHANGELOG.md
 .ruff_cache/
 .pytest_cache/
