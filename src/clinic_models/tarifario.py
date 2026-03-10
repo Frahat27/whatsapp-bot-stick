@@ -27,13 +27,13 @@ class Tarifario(ClinicBase):
         "Precio Lista", Numeric(12, 2)
     )
     precio_efectivo: Mapped[Optional[Decimal]] = mapped_column(
-        "Precio efectivo", Numeric(12, 2)
+        "Precio Efectivo", Numeric(12, 2)
     )
     moneda: Mapped[Optional[str]] = mapped_column(
         "Moneda", String(20), default="PESOS"
     )
     sena: Mapped[Optional[Decimal]] = mapped_column(
-        "Sena", Numeric(12, 2)
+        "Seña", Numeric(12, 2)
     )
 
     def to_appsheet_dict(self) -> dict[str, Any]:
@@ -44,11 +44,11 @@ class Tarifario(ClinicBase):
             "Precio Lista": (
                 float(self.precio_lista) if self.precio_lista else None
             ),
-            "Precio efectivo": (
+            "Precio Efectivo": (
                 float(self.precio_efectivo) if self.precio_efectivo else None
             ),
             "Moneda": self.moneda,
-            "Sena": float(self.sena) if self.sena else None,
+            "Seña": float(self.sena) if self.sena else None,
         }
 
     def __repr__(self) -> str:
