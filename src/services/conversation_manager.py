@@ -20,6 +20,7 @@ from typing import Any, Callable, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.clients.appsheet_sync import trigger_appsheet_sync
 from src.clients.claude_ai import generate_response, generate_response_with_image
 from src.clients.google_sheets import add_pending_task
 from src.clients.whatsapp import send_text, mark_as_read, download_media
@@ -28,7 +29,7 @@ from src.db.clinic_repository import ClinicRepository
 from src.models.conversation import Conversation, ContactType
 from src.models.message import Message, MessageRole, MessageType
 from src.models.conversation_state import ConversationState, ConversationStatus
-from src.utils.dates import today_argentina
+from src.utils.dates import now_argentina, today_argentina
 from src.utils.logging_config import get_logger
 from src.utils.phone import normalize_phone, is_admin_phone, to_whatsapp_format
 
@@ -280,10 +281,16 @@ class ConversationManager:
     # HISTORIAL DE MENSAJES
     # =========================================================================
 
+    # Umbral de inactividad: si pasó más de 1 hora desde el último mensaje
+    # del assistant, las opciones de turno ofrecidas se consideran caducas.
+    _STALE_OPTIONS_THRESHOLD_SECONDS = 3600  # 1 hora
+
     def _build_message_history(self, conversation: Conversation) -> list[dict]:
         """
         Construye el historial de mensajes en formato Anthropic.
         Toma los últimos N mensajes configurados.
+        Si detecta inactividad prolongada, inyecta una nota para que
+        Claude no repita opciones de turno caducadas.
         """
         limit = self.settings.conversation_history_limit
         recent_messages = conversation.messages[-limit:] if conversation.messages else []
@@ -295,7 +302,18 @@ class ConversationManager:
             history.append({
                 "role": msg.role.value,
                 "content": msg.content,
+                "_created_at": msg.created_at,
             })
+
+        # Detectar si las opciones de turno caducaron por inactividad
+        stale_note = self._detect_stale_options(history)
+
+        # Limpiar campo interno _created_at antes de enviar a Claude
+        for h in history:
+            h.pop("_created_at", None)
+
+        if stale_note:
+            history.append(stale_note)
 
         # Anthropic requiere que el primer mensaje sea del user
         if history and history[0]["role"] != "user":
@@ -305,6 +323,74 @@ class ConversationManager:
         history = _ensure_alternation(history)
 
         return history
+
+    def _detect_stale_options(self, history: list[dict]) -> Optional[dict]:
+        """
+        Si el último mensaje del assistant ofrecía opciones de turno
+        y pasó más de 1 hora, retorna una nota para inyectar en el historial.
+        """
+        # Buscar el último mensaje assistant (de atrás hacia adelante)
+        last_assistant = None
+        for msg in reversed(history):
+            if msg["role"] == "assistant":
+                last_assistant = msg
+                break
+
+        if not last_assistant:
+            return None
+
+        created_at = last_assistant.get("_created_at")
+        if not created_at:
+            return None
+
+        # ¿Contenía opciones de turno?
+        content = last_assistant.get("content", "")
+        turno_keywords = [
+            "opciones disponibles",
+            "opciones para tu",
+            "te queda",
+            "con Cynthia",
+            "con Ana",
+            "a las ",
+        ]
+        has_options = any(kw in content.lower() for kw in turno_keywords)
+        if not has_options:
+            return None
+
+        # ¿Pasó suficiente tiempo?
+        ahora = now_argentina()
+        if created_at.tzinfo is None:
+            from src.utils.dates import BUENOS_AIRES
+            created_at = created_at.replace(tzinfo=BUENOS_AIRES)
+
+        elapsed = (ahora - created_at).total_seconds()
+        if elapsed < self._STALE_OPTIONS_THRESHOLD_SECONDS:
+            return None
+
+        horas = int(elapsed // 3600)
+        minutos = int((elapsed % 3600) // 60)
+        if horas > 0:
+            tiempo_str = f"{horas}h {minutos}min" if minutos else f"{horas}h"
+        else:
+            tiempo_str = f"{minutos} minutos"
+
+        logger.info(
+            "stale_options_detected",
+            elapsed_seconds=int(elapsed),
+            tiempo_str=tiempo_str,
+        )
+
+        return {
+            "role": "user",
+            "content": (
+                f"[NOTA DEL SISTEMA — no visible para el paciente] "
+                f"Pasaron {tiempo_str} desde que ofreciste opciones de turno. "
+                f"Esas opciones YA NO SON VÁLIDAS (pueden haber sido tomadas por otro paciente "
+                f"o las fechas ya pasaron). "
+                f"OBLIGATORIO: ejecutá buscar_disponibilidad de nuevo para obtener opciones frescas "
+                f"antes de ofrecer cualquier turno. NO repitas las opciones anteriores."
+            ),
+        }
 
     # =========================================================================
     # MANEJO DE IMÁGENES
@@ -484,7 +570,9 @@ class ConversationManager:
             notas="Primer contacto via WhatsApp bot",
         )
         await self._clinic_db.commit()
-        return {"status": "created", "lead": lead.to_appsheet_dict()}
+        lead_dict = lead.to_appsheet_dict()
+        await trigger_appsheet_sync("BBDD LEADS", lead_dict, action="Add")
+        return {"status": "created", "lead": lead_dict}
 
     async def _tool_crear_paciente(self, inp: dict) -> dict:
         from datetime import datetime
@@ -512,7 +600,9 @@ class ConversationManager:
             referido=inp.get("referido_por"),
         )
         await self._clinic_db.commit()
-        return {"status": "created", "paciente": paciente.to_appsheet_dict()}
+        paciente_dict = paciente.to_appsheet_dict()
+        await trigger_appsheet_sync("BBDD PACIENTES", paciente_dict, action="Add")
+        return {"status": "created", "paciente": paciente_dict}
 
     async def _tool_consultar_horarios(self, inp: dict) -> dict:
         horarios = await self.clinic_repo.get_all_horarios()
@@ -694,7 +784,9 @@ class ConversationManager:
             descripcion=inp.get("observaciones", ""),
         )
         await self._clinic_db.commit()
-        return {"status": "created", "turno": sesion.to_appsheet_dict()}
+        turno_dict = sesion.to_appsheet_dict()
+        await trigger_appsheet_sync("BBDD SESIONES", turno_dict, action="Add")
+        return {"status": "created", "turno": turno_dict}
 
     async def _tool_buscar_turno_paciente(self, inp: dict) -> dict:
         paciente_id = inp["paciente_id"]
@@ -731,22 +823,26 @@ class ConversationManager:
             update_data["hora"] = nueva_hora
             # Recalcular hora_fin con la duración existente (o default 30 min)
             sesion_actual = await self.clinic_repo.get_session(inp["turno_id"])
-            dur_min = sesion_actual.duracion if sesion_actual and sesion_actual.duracion else 30
+            dur = sesion_actual.duracion if sesion_actual and sesion_actual.duracion else timedelta(minutes=30)
             update_data["hora_fin"] = (
-                datetime.combine(nueva_fecha, nueva_hora) + timedelta(minutes=dur_min)
+                datetime.combine(nueva_fecha, nueva_hora) + dur
             ).time()
 
         sesion = await self.clinic_repo.update_session(inp["turno_id"], **update_data)
         await self._clinic_db.commit()
         if sesion:
-            return {"status": "modified", "turno": sesion.to_appsheet_dict()}
+            turno_dict = sesion.to_appsheet_dict()
+            await trigger_appsheet_sync("BBDD SESIONES", turno_dict)
+            return {"status": "modified", "turno": turno_dict}
         return {"status": "error", "error": f"Turno {inp['turno_id']} no encontrado"}
 
     async def _tool_cancelar_turno(self, inp: dict) -> dict:
         sesion = await self.clinic_repo.update_session(inp["turno_id"], estado="Cancelada")
         await self._clinic_db.commit()
         if sesion:
-            return {"status": "cancelled", "turno": sesion.to_appsheet_dict()}
+            turno_dict = sesion.to_appsheet_dict()
+            await trigger_appsheet_sync("BBDD SESIONES", turno_dict)
+            return {"status": "cancelled", "turno": turno_dict}
         return {"status": "error", "error": f"Turno {inp['turno_id']} no encontrado"}
 
     async def _tool_consultar_tarifario(self, inp: dict) -> dict:
@@ -862,7 +958,9 @@ class ConversationManager:
             observaciones=inp.get("observaciones", ""),
         )
         await self._clinic_db.commit()
-        return {"status": "created", "pago": pago.to_appsheet_dict()}
+        pago_dict = pago.to_appsheet_dict()
+        await trigger_appsheet_sync("BBDD PAGOS", pago_dict, action="Add")
+        return {"status": "created", "pago": pago_dict}
 
     async def _tool_crear_tarea_pendiente(self, inp: dict) -> dict:
         result = await add_pending_task(

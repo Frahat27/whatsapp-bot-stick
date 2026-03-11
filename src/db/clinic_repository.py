@@ -10,7 +10,7 @@ Velocidad: ~5ms por query (vs ~45s con AppSheet API).
 from __future__ import annotations
 
 import uuid
-from datetime import date, time
+from datetime import date, time, timedelta
 from decimal import Decimal
 from typing import Optional, Sequence
 
@@ -322,7 +322,7 @@ class ClinicRepository:
             fecha=fecha,
             hora=hora,
             hora_fin=hora_fin,
-            duracion=duracion_minutos,
+            duracion=timedelta(minutes=duracion_minutos),
             profesional=profesional,
             estado="Planificada",
             descripcion=descripcion,

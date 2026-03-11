@@ -8,7 +8,7 @@ Mocks: ClinicRepository (no DB real), clinic_db session (no commits reales).
 """
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, time, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -339,7 +339,7 @@ class TestModificarTurno:
     async def test_calls_update_session_with_correct_args(self, manager, mock_clinic_repo, mock_clinic_db):
         # Mock get_session para que devuelva la sesion actual con duracion
         mock_sesion_actual = MagicMock()
-        mock_sesion_actual.duracion = 30
+        mock_sesion_actual.duracion = timedelta(minutes=30)
         mock_clinic_repo.get_session = AsyncMock(return_value=mock_sesion_actual)
 
         mock_sesion = MagicMock()

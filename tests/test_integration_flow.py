@@ -12,6 +12,7 @@ Real:
 - PostgreSQL (Neon) con rollback por test
 """
 
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
@@ -375,3 +376,116 @@ class TestAudioMessage:
         assert result is not None
         assert "texto" in result.lower()
         mock_claude.assert_not_called()
+
+
+# =============================================================================
+# TESTS DE DETECCIÓN DE OPCIONES DE TURNO CADUCADAS
+# =============================================================================
+
+class TestStaleOptionsDetection:
+    """Verifica que se inyecta nota cuando las opciones de turno caducan."""
+
+    def _make_manager(self, db_session):
+        mock_clinic_db = _make_clinic_db()
+        return ConversationManager(db_session, mock_clinic_db)
+
+    def _msg(self, role, content, hours_ago=0):
+        """Helper: crea un dict de historial con _created_at."""
+        ts = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+        return {"role": role, "content": content, "_created_at": ts}
+
+    def test_no_stale_when_recent(self, db_session):
+        """Opciones ofrecidas hace 10 min -> no caducadas."""
+        manager = self._make_manager(db_session)
+        history = [
+            self._msg("user", "quiero un turno", hours_ago=0),
+            self._msg("assistant", "Tengo estas opciones disponibles: Viernes 14 a las 10:00 con Cynthia", hours_ago=0),
+        ]
+        result = manager._detect_stale_options(history)
+        assert result is None
+
+    def test_stale_when_old_with_options(self, db_session):
+        """Opciones ofrecidas hace 3 horas -> caducadas."""
+        manager = self._make_manager(db_session)
+        history = [
+            self._msg("user", "quiero un turno", hours_ago=4),
+            self._msg("assistant", "Tengo estas opciones disponibles: Viernes 14 a las 10:00 con Cynthia", hours_ago=3),
+        ]
+        result = manager._detect_stale_options(history)
+        assert result is not None
+        assert result["role"] == "user"
+        assert "buscar_disponibilidad" in result["content"]
+        assert "NO SON VÁLIDAS" in result["content"]
+
+    def test_no_stale_without_turno_keywords(self, db_session):
+        """Mensaje viejo pero sin opciones de turno -> no inyecta nota."""
+        manager = self._make_manager(db_session)
+        history = [
+            self._msg("user", "hola", hours_ago=5),
+            self._msg("assistant", "Hola! Soy Sofia, en que puedo ayudarte?", hours_ago=5),
+        ]
+        result = manager._detect_stale_options(history)
+        assert result is None
+
+    def test_stale_with_con_ana_keyword(self, db_session):
+        """Opciones con 'con Ana' -> detecta como opciones de turno."""
+        manager = self._make_manager(db_session)
+        history = [
+            self._msg("user", "necesito turno", hours_ago=25),
+            self._msg("assistant", "Miercoles 18 a las 16:00 con Ana", hours_ago=24),
+        ]
+        result = manager._detect_stale_options(history)
+        assert result is not None
+        assert "buscar_disponibilidad" in result["content"]
+
+    def test_stale_formats_hours_correctly(self, db_session):
+        """Verifica que el mensaje muestra el tiempo transcurrido."""
+        manager = self._make_manager(db_session)
+        history = [
+            self._msg("user", "turno", hours_ago=3),
+            self._msg("assistant", "Opciones disponibles: Lunes a las 10:00 con Cynthia", hours_ago=2),
+        ]
+        result = manager._detect_stale_options(history)
+        assert result is not None
+        assert "2h" in result["content"]
+
+    def test_no_assistant_messages_returns_none(self, db_session):
+        """Sin mensajes assistant -> no hay nada que detectar."""
+        manager = self._make_manager(db_session)
+        history = [
+            self._msg("user", "hola", hours_ago=0),
+        ]
+        result = manager._detect_stale_options(history)
+        assert result is None
+
+    def test_history_includes_stale_note_in_build(self, db_session):
+        """Verifica que _build_message_history inyecta la nota en el historial final."""
+        manager = self._make_manager(db_session)
+
+        # Crear conversación con mensajes viejos
+        conv = MagicMock()
+        old_time = datetime.now(timezone.utc) - timedelta(hours=5)
+
+        msg_user = MagicMock()
+        msg_user.role = MessageRole.USER
+        msg_user.content = "quiero turno"
+        msg_user.created_at = old_time
+
+        msg_assistant = MagicMock()
+        msg_assistant.role = MessageRole.ASSISTANT
+        msg_assistant.content = "Opciones disponibles: Viernes a las 14:30 con Cynthia. Te queda bien?"
+        msg_assistant.created_at = old_time
+
+        conv.messages = [msg_user, msg_assistant]
+
+        history = manager._build_message_history(conv)
+
+        # Debe haber 3 mensajes: user, assistant, nota de sistema
+        assert len(history) >= 3
+        last_user_msgs = [m for m in history if m["role"] == "user"]
+        stale_notes = [m for m in last_user_msgs if "NOTA DEL SISTEMA" in m.get("content", "")]
+        assert len(stale_notes) == 1
+        assert "buscar_disponibilidad" in stale_notes[0]["content"]
+        # No debe tener _created_at en el output
+        for m in history:
+            assert "_created_at" not in m
