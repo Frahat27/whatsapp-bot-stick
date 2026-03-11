@@ -1298,3 +1298,151 @@ def _format_review_message(name: str, review_link: str) -> str:
         f"mucho que nos dejes tu opini\u00f3n en Google: {review_link}\n\n"
         f"\u00a1Gracias! \U0001f64f"
     )
+
+
+# =========================================================================
+# ALERTA ADMIN: PACIENTES EN CURSO SIN PROXIMO TURNO
+# =========================================================================
+
+async def process_en_curso_sin_turno_alerts() -> dict:
+    """
+    Detecta pacientes con tratamiento EN CURSO en BBDD ALINEADORES
+    que no tienen ningun turno planificado/confirmado en BBDD SESIONES.
+    Envia alerta al primer admin configurado.
+
+    Returns:
+        dict con contadores: alerted, skipped, errors
+    """
+    from src.db.session import get_session_factory
+
+    logger.info("en_curso_sin_turno_started")
+
+    settings = get_settings()
+    admin_phones = settings.admin_phone_list
+    if not admin_phones:
+        logger.warning("en_curso_sin_turno_no_admin_phones")
+        return {"alerted": 0, "skipped": 0, "errors": 0}
+
+    clinic_factory = get_clinic_session_factory()
+
+    # 1. Buscar pacientes con alineadores EN CURSO
+    try:
+        async with clinic_factory() as clinic_db:
+            repo = ClinicRepository(clinic_db)
+            en_curso = await repo.find_aligners_en_curso()
+    except Exception as e:
+        logger.error("en_curso_sin_turno_db_error", error=str(e))
+        return {"alerted": 0, "skipped": 0, "errors": 1}
+
+    if not en_curso:
+        logger.info("en_curso_sin_turno_none_found")
+        return {"alerted": 0, "skipped": 0, "errors": 0}
+
+    logger.info("en_curso_found", count=len(en_curso))
+
+    # 2. Para cada uno, verificar si tiene turno futuro
+    patients_sin_turno = []
+    today = today_argentina()
+
+    for alineador in en_curso:
+        patient_id = alineador.id_paciente
+        if not patient_id:
+            continue
+
+        try:
+            async with clinic_factory() as clinic_db:
+                repo = ClinicRepository(clinic_db)
+                active_sessions = await repo.find_patient_active_sessions(patient_id)
+                # Filtrar solo futuras
+                future_sessions = [
+                    s for s in active_sessions
+                    if s.fecha and s.fecha >= today
+                ]
+        except Exception as e:
+            logger.error(
+                "en_curso_session_check_error",
+                patient_id=patient_id,
+                error=str(e),
+            )
+            continue
+
+        if not future_sessions:
+            patients_sin_turno.append(alineador)
+
+    if not patients_sin_turno:
+        logger.info("en_curso_sin_turno_all_have_appointments")
+        return {"alerted": 0, "skipped": len(en_curso), "errors": 0}
+
+    # 3. Construir mensaje de alerta y enviar al admin
+    factory = get_session_factory()
+    admin_phone = admin_phones[0]  # Franco
+
+    lines = [
+        f"⚠️ *Alerta: {len(patients_sin_turno)} paciente(s) EN CURSO sin turno*\n",
+    ]
+    for a in patients_sin_turno:
+        name = a.paciente or "Sin nombre"
+        tipo = a.tipo_tratamiento or "Alineadores"
+        lines.append(f"• *{name}* — {tipo} (ID: {a.id_paciente})")
+
+    lines.append(
+        "\nEstos pacientes tienen tratamiento activo pero no tienen "
+        "próximo turno planificado. Considerar contactar para agendar."
+    )
+
+    message = "\n".join(lines)
+
+    # Check dedup: solo alertar una vez por día
+    today_str = today.isoformat()
+    dedup_ref = f"en_curso_sin_turno_{today_str}"
+
+    async with factory() as db:
+        already_sent = await _check_already_sent(
+            db, ReminderType.APPOINTMENT_REMINDER, dedup_ref, attempt=99,
+        )
+        if already_sent:
+            logger.info("en_curso_sin_turno_already_alerted_today")
+            return {"alerted": 0, "skipped": len(patients_sin_turno), "errors": 0}
+
+        # Registrar envio
+        reminder = SentReminder(
+            reminder_type=ReminderType.APPOINTMENT_REMINDER,
+            reference_id=dedup_ref,
+            phone=admin_phone,
+            attempt=99,  # Distinguir de recordatorios normales
+            status=ReminderStatus.SENT,
+            message_sent=message[:500],
+            target_date=today,
+        )
+        db.add(reminder)
+
+        try:
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            return {"alerted": 0, "skipped": len(patients_sin_turno), "errors": 0}
+
+        # Enviar
+        result = await send_proactive_message(
+            db=db,
+            phone_10=admin_phone,
+            text=message,
+            patient_name="Admin Alert",
+            contact_type=ContactType.ADMIN,
+        )
+
+        if result.get("status") != "ok":
+            reminder.status = ReminderStatus.FAILED
+            reminder.error_detail = str(result.get("error", ""))[:500]
+            await db.commit()
+            logger.error("en_curso_sin_turno_send_failed", error=result.get("error"))
+            return {"alerted": 0, "skipped": 0, "errors": 1}
+
+        await db.commit()
+
+    logger.info(
+        "en_curso_sin_turno_alert_sent",
+        patients=len(patients_sin_turno),
+        admin_phone=admin_phone,
+    )
+    return {"alerted": len(patients_sin_turno), "skipped": 0, "errors": 0}

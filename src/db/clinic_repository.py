@@ -535,3 +535,11 @@ class ClinicRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def find_aligners_en_curso(self) -> Sequence[Alineador]:
+        """Pacientes con tratamiento de alineadores EN CURSO."""
+        stmt = select(Alineador).where(
+            Alineador.estado_tratamiento == "EN CURSO"
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()

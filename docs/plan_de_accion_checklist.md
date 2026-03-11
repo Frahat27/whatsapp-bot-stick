@@ -236,7 +236,7 @@
 
 ---
 
-## FASE 5 — Recordatorios y Automatizaciones ✅ 95%
+## FASE 5 — Recordatorios y Automatizaciones ✅ COMPLETA
 
 - [x] **5.1** Setup APScheduler ✅
   - [x] Integrar con FastAPI — scheduler.py
@@ -259,9 +259,10 @@
   - [x] process_aligner_reminders() — ciclos 12/15/15 dias
   - [x] Solo si tiene proximo turno planificado
 
-- [ ] **5.5** Alerta admin: EN CURSO sin proximo turno
-  - [ ] Detectar pacientes activos sin turno agendado
-  - [ ] Notificar a admin via WhatsApp o panel
+- [x] **5.5** Alerta admin: EN CURSO sin proximo turno ✅
+  - [x] Cron diario (12:00): detecta pacientes con alineadores EN CURSO sin turno futuro
+  - [x] Envia alerta WhatsApp al admin con lista de pacientes afectados
+  - [x] Dedup diario: solo alerta una vez por dia
 
 - [x] **5.6** Cron: Seguimiento de leads ✅
   - [x] process_lead_followups() — dia 3 y dia 7
@@ -430,7 +431,7 @@
 | 2 | Turnos | ✅ COMPLETA |
 | 3 | Conversion Lead -> Paciente | ✅ COMPLETA |
 | 4 | Precios, Pagos y Cobros | ✅ COMPLETA |
-| 5 | Recordatorios | ✅ 95% (falta alerta EN CURSO sin turno) |
+| 5 | Recordatorios | ✅ COMPLETA |
 | 6 | Panel Admin Custom | ✅ COMPLETA |
 | 7 | Escalado y Facturacion | ⚠️ ~15% |
 | 8 | Testing y Go-Live | ❌ Bloqueado por 0.1 |

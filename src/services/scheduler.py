@@ -123,7 +123,21 @@ async def start_scheduler() -> None:
         max_instances=1,
     )
 
-    # Job 7: Cleanup de conversaciones inactivas (diario a las 3 AM)
+    # Job 7: Alerta admin — pacientes EN CURSO sin turno (diario a las 12:00)
+    _scheduler.add_job(
+        _run_en_curso_sin_turno,
+        trigger=CronTrigger(
+            hour=12,
+            minute=0,
+            timezone=_TZ_ARG,
+        ),
+        id="en_curso_sin_turno",
+        name="Alerta pacientes EN CURSO sin turno",
+        replace_existing=True,
+        max_instances=1,
+    )
+
+    # Job 8: Cleanup de conversaciones inactivas (diario a las 3 AM)
     _scheduler.add_job(
         _run_conversation_cleanup,
         trigger=CronTrigger(
@@ -189,6 +203,12 @@ async def _run_google_review_requests() -> None:
     """Wrapper: adquiere Redis lock, luego delega al reminder service."""
     from src.services.reminder_service import process_google_review_requests
     await _run_with_lock("job:google_review_requests", process_google_review_requests)
+
+
+async def _run_en_curso_sin_turno() -> None:
+    """Wrapper: adquiere Redis lock, luego alerta sobre pacientes EN CURSO sin turno."""
+    from src.services.reminder_service import process_en_curso_sin_turno_alerts
+    await _run_with_lock("job:en_curso_sin_turno", process_en_curso_sin_turno_alerts)
 
 
 async def _run_conversation_cleanup() -> None:
