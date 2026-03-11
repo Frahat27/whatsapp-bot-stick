@@ -364,9 +364,10 @@
   - [x] Cron diario (13:00): detecta conversaciones donde ultimo msg fue del user hace >24h
   - [x] Envia alerta WhatsApp al admin con lista de conversaciones afectadas
   - [x] Dedup diario
-- [ ] **7.4** Solicitud de factura
-- [ ] **7.5** Envio de facturas PDF
-- [ ] **7.6** Archivos y estudios recibidos (radiografias, etc.)
+- [x] **7.4** Solicitud de factura ✅
+  - [x] Claude pide datos fiscales al paciente y crea tarea tipo "Factura pendiente" via crear_tarea_pendiente
+- [ ] **7.5** Envio de facturas PDF (Franco tiene armado aparte)
+- [ ] **7.6** Archivos y estudios recibidos (Franco tiene armado aparte)
 
 ---
 
