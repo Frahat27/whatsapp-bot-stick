@@ -1,5 +1,5 @@
 # Plan de Accion — Bot Sofia STICK
-# Checklist v4 — Actualizado 2026-03-10 (estado real del codigo)
+# Checklist v5 — Actualizado 2026-03-10 (estado real del codigo)
 # Python + React (sin n8n, sin Chatwoot — Panel Admin custom)
 
 **Stack:** Python (FastAPI) + React (Next.js 16) + PostgreSQL (Neon + Cloud SQL) + Claude API + AppSheet API + Google Sheets + Redis (Upstash)
@@ -279,7 +279,7 @@
 
 ---
 
-## FASE 6 — Panel Admin Custom (Frontend) ✅ ~90%
+## FASE 6 — Panel Admin Custom (Frontend) ✅ COMPLETA
 
 > Panel Next.js 16 + React 19 + Tailwind + shadcn/ui. Branding STICK.
 > Estilo WhatsApp Web. Responsive. Dark mode.
@@ -325,9 +325,11 @@
   - [x] ConversationState con estados BOT_ACTIVE / ESCALATED / ADMIN_TAKEOVER
   - [x] Bot se calla cuando status != bot_active
 
-- [ ] **6.7** Panel de tareas pendientes
-  - [ ] Vista de tareas desde Google Sheets
-  - [ ] Lista, filtros, resolver
+- [x] **6.7** Panel de tareas pendientes ✅
+  - [x] Backend: GET /tasks + PATCH /tasks/{row}/resolve
+  - [x] Frontend: /dashboard/tasks con filtros (Pendiente/En proceso/Resuelto)
+  - [x] Cards expandibles con resolver + notas
+  - [x] Link desde header del ConversationList
 
 - [x] **6.8** Notificaciones ✅
   - [x] Sonido al recibir mensaje (suprime conversacion activa)
@@ -429,7 +431,7 @@
 | 3 | Conversion Lead -> Paciente | ✅ COMPLETA |
 | 4 | Precios, Pagos y Cobros | ✅ COMPLETA |
 | 5 | Recordatorios | ✅ 95% (falta alerta EN CURSO sin turno) |
-| 6 | Panel Admin Custom | ✅ ~90% (falta panel tareas) |
+| 6 | Panel Admin Custom | ✅ COMPLETA |
 | 7 | Escalado y Facturacion | ⚠️ ~15% |
 | 8 | Testing y Go-Live | ❌ Bloqueado por 0.1 |
 
