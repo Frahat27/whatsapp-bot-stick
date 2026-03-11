@@ -25,8 +25,8 @@ logger = get_logger(__name__)
 # Tipo del callback que ejecuta tools
 ToolExecutor = Callable[[str, dict], Awaitable[Any]]
 
-# Modelo por defecto
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
+# Modelo por defecto (se sobreescribe desde config/env CLAUDE_MODEL)
+DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 
 # Máximo de iteraciones de tool calling (safety net)
 MAX_TOOL_ITERATIONS = 15
@@ -93,7 +93,7 @@ async def generate_response(
     messages: list[dict],
     tool_executor: Optional[ToolExecutor] = None,
     patient_context: Optional[dict] = None,
-    model: str = DEFAULT_MODEL,
+    model: Optional[str] = None,
     max_tokens: int = 1024,
 ) -> str:
     """
@@ -115,6 +115,7 @@ async def generate_response(
 
     settings = get_settings()
     timeout = settings.conversation_timeout_seconds
+    resolved_model = model or settings.claude_model or DEFAULT_MODEL
 
     try:
         return await asyncio.wait_for(
@@ -122,7 +123,7 @@ async def generate_response(
                 messages=messages,
                 tool_executor=tool_executor,
                 patient_context=patient_context,
-                model=model,
+                model=resolved_model,
                 max_tokens=max_tokens,
             ),
             timeout=timeout,

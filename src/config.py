@@ -54,6 +54,7 @@ class Settings(BaseSettings):
 
     # --- Claude API (Anthropic) ---
     anthropic_api_key: str = ""
+    claude_model: str = "claude-haiku-4-5-20251001"
 
     # --- PostgreSQL (Neon) — bot-internal data ---
     database_url: str = ""
