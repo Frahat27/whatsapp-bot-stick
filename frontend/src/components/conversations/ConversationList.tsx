@@ -120,6 +120,17 @@ export function ConversationList({ activeId }: { activeId?: number }) {
           </div>
         </div>
         <div className="flex items-center gap-1">
+          {/* Tasks link */}
+          <button
+            onClick={() => router.push("/dashboard/tasks")}
+            className="text-white/60 hover:text-white transition-all p-2 rounded-xl hover:bg-white/10"
+            title="Tareas pendientes"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 11l3 3L22 4" />
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+          </button>
           {/* Notification settings */}
           <div className="relative">
             <button

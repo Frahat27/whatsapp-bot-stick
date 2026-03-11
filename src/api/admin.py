@@ -409,6 +409,53 @@ async def update_conversation_state(
 
 
 # =========================================================================
+# TASKS — Google Sheets "Tareas Pendientes"
+# =========================================================================
+
+class TaskUpdateRequest(BaseModel):
+    estado: str = "Resuelto"
+    resuelta_por: Optional[str] = None
+    notas: Optional[str] = None
+
+
+@router.get("/tasks")
+async def list_tasks(
+    estado: str = Query("Pendiente"),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Lista tareas pendientes desde Google Sheets."""
+    from src.clients.google_sheets import get_pending_tasks
+
+    tasks = await get_pending_tasks(estado=estado)
+    return {"status": "ok", "tasks": tasks, "count": len(tasks)}
+
+
+@router.patch("/tasks/{row_number}/resolve")
+async def resolve_task(
+    row_number: int,
+    req: TaskUpdateRequest,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Actualizar estado de una tarea (resolver, poner en proceso)."""
+    from src.clients.google_sheets import update_task_status
+
+    result = await update_task_status(
+        row_number=row_number,
+        estado=req.estado,
+        resuelta_por=req.resuelta_por or admin.name,
+        notas=req.notas or "",
+    )
+
+    logger.info(
+        "task_resolved",
+        row=row_number,
+        estado=req.estado,
+        admin=admin.username,
+    )
+    return result
+
+
+# =========================================================================
 # DIAGNOSTICS — Availability Debug
 # =========================================================================
 

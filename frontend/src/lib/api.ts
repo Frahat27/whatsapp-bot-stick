@@ -68,6 +68,18 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+
+  getTasks: (estado: string = "Pendiente") =>
+    fetchWithAuth(`/api/v1/admin/tasks?estado=${encodeURIComponent(estado)}`),
+
+  resolveTask: (
+    rowNumber: number,
+    data: { estado?: string; resuelta_por?: string; notas?: string }
+  ) =>
+    fetchWithAuth(`/api/v1/admin/tasks/${rowNumber}/resolve`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
 };
 
 export { API_BASE };
