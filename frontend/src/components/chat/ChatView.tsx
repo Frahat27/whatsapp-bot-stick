@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { adminWs } from "@/lib/ws";
 import { MessageData, WsEvent, ConversationDetail } from "@/lib/types";
 import { ToolCallCard } from "./ToolCallCard";
+import { useNotifications } from "@/components/notifications/NotificationProvider";
 
 const contactTypeLabels: Record<string, { text: string; color: string }> = {
   paciente: { text: "Paciente", color: "bg-[#364c85]/10 text-[#364c85]" },
@@ -83,8 +84,19 @@ function MessagesSkeleton() {
   );
 }
 
-export function ChatView({ conversationId }: { conversationId: number }) {
+export function ChatView({
+  conversationId,
+  onToggleSidebar,
+  showSidebar,
+  onDetailLoaded,
+}: {
+  conversationId: number;
+  onToggleSidebar?: () => void;
+  showSidebar?: boolean;
+  onDetailLoaded?: (detail: ConversationDetail) => void;
+}) {
   const router = useRouter();
+  const { setActiveConversation } = useNotifications();
   const [messages, setMessages] = useState<MessageData[]>([]);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [simPhone, setSimPhone] = useState("");
@@ -114,6 +126,12 @@ export function ChatView({ conversationId }: { conversationId: number }) {
     if (distanceFromBottom <= 200) setNewMsgCount(0);
   }, []);
 
+  // Track active conversation for notification suppression
+  useEffect(() => {
+    setActiveConversation(conversationId);
+    return () => setActiveConversation(null);
+  }, [conversationId, setActiveConversation]);
+
   // Fetch messages and conversation detail
   useEffect(() => {
     setLoading(true);
@@ -128,6 +146,7 @@ export function ChatView({ conversationId }: { conversationId: number }) {
           const d = await detRes.json();
           setDetail(d);
           setSimPhone(d.phone);
+          onDetailLoaded?.(d);
         }
       } catch (e) {
         console.error("Failed to fetch chat data:", e);
@@ -280,6 +299,23 @@ export function ChatView({ conversationId }: { conversationId: number }) {
               </svg>
             )}
           </button>
+          {/* Sidebar toggle — desktop only */}
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              className={`hidden lg:flex p-2.5 rounded-xl transition-all duration-200 ${
+                showSidebar
+                  ? "bg-[#364c85]/10 text-[#364c85]"
+                  : "bg-[#f0f2f5] text-[#667781] hover:bg-[#e9edef] dark:bg-[var(--muted)] dark:hover:bg-[var(--border)]"
+              }`}
+              title={showSidebar ? "Ocultar panel" : "Ver datos del contacto"}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <line x1="15" y1="3" x2="15" y2="21" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
