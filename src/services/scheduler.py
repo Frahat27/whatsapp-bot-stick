@@ -123,6 +123,20 @@ async def start_scheduler() -> None:
         max_instances=1,
     )
 
+    # Job 7: Cleanup de conversaciones inactivas (diario a las 3 AM)
+    _scheduler.add_job(
+        _run_conversation_cleanup,
+        trigger=CronTrigger(
+            hour=settings.conversation_cleanup_cron_hour,
+            minute=0,
+            timezone=_TZ_ARG,
+        ),
+        id="conversation_cleanup",
+        name="Cleanup conversaciones inactivas",
+        replace_existing=True,
+        max_instances=1,
+    )
+
     _scheduler.start()
     logger.info(
         "scheduler_started",
@@ -175,6 +189,64 @@ async def _run_google_review_requests() -> None:
     """Wrapper: adquiere Redis lock, luego delega al reminder service."""
     from src.services.reminder_service import process_google_review_requests
     await _run_with_lock("job:google_review_requests", process_google_review_requests)
+
+
+async def _run_conversation_cleanup() -> None:
+    """Wrapper: adquiere Redis lock, luego ejecuta cleanup de conversaciones."""
+    await _run_with_lock("job:conversation_cleanup", _do_conversation_cleanup)
+
+
+async def _do_conversation_cleanup() -> None:
+    """Archiva conversaciones sin actividad en los últimos N días."""
+    from datetime import timedelta
+    from sqlalchemy import select, update
+    from src.db.session import get_session_factory
+    from src.models.conversation import Conversation
+    from src.models.message import Message
+    from src.utils.dates import now_argentina
+
+    settings = get_settings()
+    cutoff = now_argentina() - timedelta(days=settings.conversation_cleanup_days)
+
+    async with get_session_factory()() as db:
+        # Encontrar conversaciones activas cuyo último mensaje es anterior al cutoff
+        # Subquery: max created_at por conversación
+        from sqlalchemy import func
+        last_msg_subq = (
+            select(
+                Message.conversation_id,
+                func.max(Message.created_at).label("last_at"),
+            )
+            .group_by(Message.conversation_id)
+            .subquery()
+        )
+
+        stale_query = (
+            select(Conversation.id)
+            .join(last_msg_subq, Conversation.id == last_msg_subq.c.conversation_id)
+            .where(
+                Conversation.is_active == True,
+                last_msg_subq.c.last_at < cutoff,
+            )
+        )
+        result = await db.execute(stale_query)
+        stale_ids = [row[0] for row in result.all()]
+
+        if stale_ids:
+            await db.execute(
+                update(Conversation)
+                .where(Conversation.id.in_(stale_ids))
+                .values(is_active=False)
+            )
+            await db.commit()
+
+            logger.info(
+                "conversation_cleanup_done",
+                archived=len(stale_ids),
+                cutoff_days=settings.conversation_cleanup_days,
+            )
+        else:
+            logger.info("conversation_cleanup_none", cutoff_days=settings.conversation_cleanup_days)
 
 
 async def _run_with_lock(lock_key: str, func) -> None:

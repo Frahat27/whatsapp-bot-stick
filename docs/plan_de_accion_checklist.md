@@ -52,7 +52,7 @@
 
 ---
 
-## FASE 1 — Backend Core: Identificacion + IA ✅ 95%
+## FASE 1 — Backend Core: Identificacion + IA ✅ COMPLETA
 
 - [x] **1.1** Webhook handler de WhatsApp ✅
   - [x] Endpoint POST /webhook para recibir mensajes
@@ -88,13 +88,13 @@
   - [x] generate_response_with_image para comprobantes (Vision)
   - [x] Modelo configurable via CLAUDE_MODEL env var (default: Haiku 4.5)
 
-- [~] **1.5** Memoria conversacional (PostgreSQL) ✅ parcial
+- [x] **1.5** Memoria conversacional (PostgreSQL) ✅
   - [x] Tabla conversations: id, phone, patient_id, created_at, updated_at
   - [x] Tabla messages: id, conversation_id, role, content, timestamp
   - [x] Almacenar cada mensaje entrante y saliente
   - [x] Recuperar ultimos N mensajes como contexto para Claude — _build_message_history()
   - [x] Deteccion de opciones de turno caducadas (>1h) — inyecta nota forzando buscar_disponibilidad
-  - [ ] TTL configurable para limpiar conversaciones viejas
+  - [x] Cron cleanup: archiva conversaciones sin actividad > 90 dias (configurable)
 
 - [x] **1.6** Envio de mensajes WhatsApp ✅
   - [x] Funcion enviar texto (WhatsApp Cloud API)
@@ -105,10 +105,10 @@
   - [x] mark_as_read (doble tilde azul)
   - [x] download_media (2-step: URL → download)
 
-- [~] **1.7** Deteccion de numeros admin
+- [x] **1.7** Deteccion de numeros admin ✅
   - [x] Detectar si viene de 1123266671 (Franco) o 5491171342438 (Cynthia) — phone.py is_admin_phone()
-  - [ ] Cambiar modo de respuesta: directo y operativo
-  - [ ] Parsear ordenes del admin (cobrar, enviar facturas, etc.)
+  - [x] Cambiar modo de respuesta: directo y operativo — context["es_admin"] + system prompt
+  - [x] Parsear ordenes del admin (cobrar, enviar facturas, etc.) — Claude via system prompt v2.0
 
 - [x] **1.8** Tests unitarios del core ✅ COMPLETO
   - [x] Tests de webhook handler (payloads reales de Meta) — 4 tests
@@ -122,7 +122,7 @@
   - [x] Tests de integracion E2E (mocked) — 20 tests
   - [x] Tests de AppSheet sync — 9 tests
   - [x] **Total: 352 tests, 19 archivos, 100% pass**
-  - [ ] CI pipeline basico
+  - [x] CI pipeline: GitHub Actions (.github/workflows/test.yml) — tests + frontend build
 
 ---
 
@@ -397,9 +397,9 @@
   - [x] Dockerfile para backend
   - [ ] docker-compose para desarrollo local
 
-- [ ] **T.5** Modo admin completo 🟡 IMPORTANTE
-  - [ ] Cambiar modo de respuesta: directo y operativo
-  - [ ] Parsear ordenes del admin (cobrar, enviar facturas, etc.)
+- [x] **T.5** Modo admin completo ✅
+  - [x] Cambiar modo de respuesta: directo y operativo — context["es_admin"]
+  - [x] Parsear ordenes del admin (cobrar, enviar facturas, etc.) — Claude via system prompt
 
 - [x] **T.6** Tests completos ✅ COMPLETO
   - [x] 19 archivos de tests, 352 test cases
@@ -411,7 +411,7 @@
   - [x] Tests de recordatorios (67 tests)
   - [x] Tests de AppSheet sync (9 tests)
   - [x] Tests de integracion E2E (20 tests)
-  - [ ] CI pipeline basico
+  - [x] CI pipeline: GitHub Actions (test + frontend build on push/PR)
 
 - [x] **T.7** Sync AppSheet ↔ Cloud SQL ✅ COMPLETO
   - [x] Fire-and-forget sync a AppSheet despues de cada escritura en Cloud SQL
@@ -426,7 +426,7 @@
 | Fase | Modulo | Estado |
 |------|--------|--------|
 | 0 | Infraestructura Base | ⚠️ Falta WhatsApp Business API |
-| 1 | Backend Core | ✅ 95% (falta TTL cleanup + modo admin) |
+| 1 | Backend Core | ✅ COMPLETA |
 | 2 | Turnos | ✅ COMPLETA |
 | 3 | Conversion Lead -> Paciente | ✅ COMPLETA |
 | 4 | Precios, Pagos y Cobros | ✅ COMPLETA |

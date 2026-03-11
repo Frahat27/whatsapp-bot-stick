@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     conversation_lock_ttl_seconds: int = 120  # TTL del lock por conversación
     conversation_timeout_seconds: int = 90  # timeout global del tool calling loop
 
+    # --- Conversation cleanup ---
+    conversation_cleanup_days: int = 90  # Archivar conversaciones sin actividad > N dias
+    conversation_cleanup_cron_hour: int = 3  # 3:00 AM Argentina
+
     # --- Scheduler ---
     scheduler_enabled: bool = True  # False para deshabilitar todos los jobs
     scheduler_appointment_cron_hour: int = 10  # 10:00 AM Argentina
