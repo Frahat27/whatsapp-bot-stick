@@ -1446,3 +1446,144 @@ async def process_en_curso_sin_turno_alerts() -> dict:
         admin_phone=admin_phone,
     )
     return {"alerted": len(patients_sin_turno), "skipped": 0, "errors": 0}
+
+
+# =========================================================================
+# CONSULTAS SIN RESPUESTA (>24h)
+# =========================================================================
+
+async def process_unanswered_queries() -> dict:
+    """
+    Detecta conversaciones bot_active donde el ultimo mensaje fue del paciente
+    hace mas de 24h sin respuesta del bot. Alerta al admin.
+
+    Esto cubre casos donde el bot falló silenciosamente (error, timeout, etc.)
+    y el paciente quedó sin respuesta.
+
+    Returns:
+        dict con contadores: alerted, skipped, errors
+    """
+    from sqlalchemy import func, and_, or_
+    from src.db.session import get_session_factory
+    from src.models.conversation_state import ConversationState, ConversationStatus
+    from src.utils.dates import now_argentina
+
+    logger.info("unanswered_queries_started")
+
+    settings = get_settings()
+    admin_phones = settings.admin_phone_list
+    if not admin_phones:
+        return {"alerted": 0, "skipped": 0, "errors": 0}
+
+    cutoff = now_argentina() - timedelta(hours=24)
+    factory = get_session_factory()
+
+    try:
+        async with factory() as db:
+            # Buscar conversaciones bot_active donde el ultimo mensaje fue del user
+            # y fue hace mas de 24h
+            last_msg_subq = (
+                select(
+                    Message.conversation_id,
+                    func.max(Message.id).label("last_msg_id"),
+                )
+                .group_by(Message.conversation_id)
+                .subquery()
+            )
+
+            query = (
+                select(
+                    Conversation.id,
+                    Conversation.phone,
+                    Conversation.patient_name,
+                    Message.content,
+                    Message.created_at,
+                )
+                .join(last_msg_subq, Conversation.id == last_msg_subq.c.conversation_id)
+                .join(Message, Message.id == last_msg_subq.c.last_msg_id)
+                .outerjoin(ConversationState, ConversationState.conversation_id == Conversation.id)
+                .where(
+                    and_(
+                        Conversation.is_active == True,
+                        or_(
+                            ConversationState.status == ConversationStatus.BOT_ACTIVE,
+                            ConversationState.status == None,
+                        ),
+                        Message.role == MessageRole.USER,
+                        Message.created_at < cutoff,
+                    ),
+                )
+            )
+
+            result = await db.execute(query)
+            unanswered = result.all()
+
+    except Exception as e:
+        logger.error("unanswered_queries_db_error", error=str(e))
+        return {"alerted": 0, "skipped": 0, "errors": 1}
+
+    if not unanswered:
+        logger.info("unanswered_queries_none")
+        return {"alerted": 0, "skipped": 0, "errors": 0}
+
+    # Dedup: solo alertar una vez por día
+    today_str = today_argentina().isoformat()
+    dedup_ref = f"unanswered_queries_{today_str}"
+
+    async with factory() as db:
+        already_sent = await _check_already_sent(
+            db, ReminderType.APPOINTMENT_REMINDER, dedup_ref, attempt=98,
+        )
+        if already_sent:
+            logger.info("unanswered_queries_already_alerted_today")
+            return {"alerted": 0, "skipped": len(unanswered), "errors": 0}
+
+        # Construir mensaje
+        lines = [
+            f"⚠️ *{len(unanswered)} consulta(s) sin respuesta (>24h)*\n",
+        ]
+        for conv_id, phone, name, content, created_at in unanswered[:10]:
+            preview = (content[:60] + "...") if content and len(content) > 60 else (content or "")
+            lines.append(f"• *{name or phone}*: \"{preview}\"")
+
+        if len(unanswered) > 10:
+            lines.append(f"\n... y {len(unanswered) - 10} más")
+
+        lines.append("\nRevisá en el panel admin.")
+        message = "\n".join(lines)
+
+        # Registrar dedup
+        reminder = SentReminder(
+            reminder_type=ReminderType.APPOINTMENT_REMINDER,
+            reference_id=dedup_ref,
+            phone=admin_phones[0],
+            attempt=98,
+            status=ReminderStatus.SENT,
+            message_sent=message[:500],
+            target_date=today_argentina(),
+        )
+        db.add(reminder)
+
+        try:
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            return {"alerted": 0, "skipped": len(unanswered), "errors": 0}
+
+        # Enviar al admin
+        result = await send_proactive_message(
+            db=db,
+            phone_10=admin_phones[0],
+            text=message,
+            patient_name="Admin Alert",
+            contact_type=ContactType.ADMIN,
+        )
+
+        if result.get("status") != "ok":
+            reminder.status = ReminderStatus.FAILED
+            reminder.error_detail = str(result.get("error", ""))[:500]
+
+        await db.commit()
+
+    logger.info("unanswered_queries_alert_sent", count=len(unanswered))
+    return {"alerted": len(unanswered), "skipped": 0, "errors": 0}

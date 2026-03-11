@@ -382,6 +382,8 @@ async def update_conversation_state(
     if not state:
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
 
+    previous_status = state.status
+
     if req.status is not None:
         try:
             state.status = ConversationStatus(req.status)
@@ -399,13 +401,50 @@ async def update_conversation_state(
     if req.status:
         await broadcast_state_changed(conversation_id, req.status)
 
+    # Re-engagement: si pasó de escalated/admin_takeover → bot_active, avisar al paciente
+    if (
+        req.status == "bot_active"
+        and previous_status in (ConversationStatus.ESCALATED, ConversationStatus.ADMIN_TAKEOVER)
+    ):
+        await _send_reengagement_message(db, conversation_id)
+
     logger.info(
         "conversation_state_updated",
         conversation_id=conversation_id,
         admin=admin.username,
         new_status=req.status,
+        previous_status=previous_status.value if previous_status else None,
     )
     return {"status": "ok", "conversation_id": conversation_id}
+
+
+# =========================================================================
+# RE-ENGAGEMENT POST-ESCALACION
+# =========================================================================
+
+async def _send_reengagement_message(db: AsyncSession, conversation_id: int):
+    """Envía mensaje al paciente cuando el admin devuelve la conversación a Sofía."""
+    try:
+        conv = await db.get(Conversation, conversation_id)
+        if not conv or not conv.phone:
+            return
+
+        from src.services.proactive_message import send_proactive_message
+        await send_proactive_message(
+            db=db,
+            phone_10=conv.phone,
+            text=(
+                "¡Hola! 😊 Ya fue revisada tu consulta por el equipo. "
+                "Soy Sofía y estoy de vuelta para seguir ayudándote. "
+                "¿Hay algo más en lo que pueda asistirte?"
+            ),
+            patient_name=conv.patient_name,
+            patient_id=conv.patient_id,
+        )
+        await db.commit()
+        logger.info("reengagement_sent", conversation_id=conversation_id)
+    except Exception as e:
+        logger.error("reengagement_failed", conversation_id=conversation_id, error=str(e))
 
 
 # =========================================================================

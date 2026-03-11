@@ -4,8 +4,8 @@ from src.tools.definitions import ALL_TOOLS, TOOL_NAMES
 
 
 class TestToolDefinitions:
-    def test_tool_count_is_15(self):
-        assert len(ALL_TOOLS) == 15
+    def test_tool_count_is_16(self):
+        assert len(ALL_TOOLS) == 16
 
     def test_no_duplicate_names(self):
         names = [t["name"] for t in ALL_TOOLS]

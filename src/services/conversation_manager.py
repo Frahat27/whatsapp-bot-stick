@@ -54,6 +54,7 @@ class ConversationManager:
         self.settings = get_settings()
         self._tool_call_callback = tool_call_callback
         self._current_conversation_id: Optional[int] = None
+        self._current_conversation: Optional["Conversation"] = None
 
     # =========================================================================
     # PUNTO DE ENTRADA PRINCIPAL
@@ -94,6 +95,7 @@ class ConversationManager:
         # 1. Buscar o crear conversación
         conversation = await self._get_or_create_conversation(phone)
         self._current_conversation_id = conversation.id
+        self._current_conversation = conversation
 
         # 2. Check dedup (wa_message_id)
         if wa_message_id:
@@ -507,6 +509,7 @@ class ConversationManager:
             "buscar_pago": self._tool_buscar_pago,
             "registrar_pago": self._tool_registrar_pago,
             "crear_tarea_pendiente": self._tool_crear_tarea_pendiente,
+            "escalar_conversacion": self._tool_escalar_conversacion,
         }
 
         handler = handlers.get(tool_name)
@@ -973,6 +976,55 @@ class ConversationManager:
             prioridad=inp.get("prioridad", "🟡 Normal"),
         )
         return result
+
+    async def _tool_escalar_conversacion(self, inp: dict) -> dict:
+        """Escala la conversacion a un agente humano y notifica al admin."""
+        from src.api.admin_ws import broadcast_state_changed
+
+        motivo = inp["motivo"]
+        paciente = inp.get("paciente", "")
+        telefono = inp.get("telefono", "")
+
+        # 1. Cambiar estado a ESCALATED
+        conversation = self._current_conversation
+        if conversation and conversation.state:
+            conversation.state.status = ConversationStatus.ESCALATED
+            await self.db.flush()
+
+        # 2. Broadcast al panel admin
+        if conversation:
+            try:
+                await broadcast_state_changed(conversation.id, "escalated")
+            except Exception:
+                pass
+
+        # 3. Enviar WhatsApp push al admin
+        admin_phones = self.settings.admin_phone_list
+        if admin_phones:
+            admin_wa = to_whatsapp_format(admin_phones[0])
+            alert_msg = (
+                f"🔔 *Escalación — Sofía necesita ayuda*\n\n"
+                f"*Paciente:* {paciente or 'Desconocido'}\n"
+                f"*Teléfono:* {telefono or 'N/A'}\n"
+                f"*Motivo:* {motivo}\n\n"
+                f"Revisá la conversación en el panel admin."
+            )
+            try:
+                await send_text(to=admin_wa, text=alert_msg)
+            except Exception as e:
+                logger.error("escalation_whatsapp_failed", error=str(e))
+
+        logger.info(
+            "conversation_escalated",
+            motivo=motivo,
+            paciente=paciente,
+            phone=telefono,
+        )
+
+        return {
+            "status": "escalated",
+            "mensaje": "Conversación escalada al equipo. Sofía deja de responder.",
+        }
 
     # =========================================================================
     # WS BROADCAST + TOOL CALL PERSISTENCE

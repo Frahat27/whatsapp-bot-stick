@@ -350,13 +350,20 @@
 
 ---
 
-## FASE 7 — Escalado y Facturacion ⚠️ ~15%
+## FASE 7 — Escalado y Facturacion ⚠️ ~60%
 
-- [~] **7.1** Sistema de escalado via panel
+- [x] **7.1** Sistema de escalado via panel ✅
   - [x] Bot escala y panel muestra estado ESCALATED
-  - [ ] Notificacion push al admin cuando se escala
-- [ ] **7.2** Re-engagement post-escalado
-- [ ] **7.3** Consultas sin respuesta
+  - [x] Tool escalar_conversacion: Claude llama cuando detecta necesidad de escalar
+  - [x] Push WhatsApp al admin con motivo, paciente y telefono
+  - [x] Broadcast WebSocket al panel admin
+- [x] **7.2** Re-engagement post-escalado ✅
+  - [x] Cuando admin devuelve a bot_active desde escalated/takeover, envia mensaje automatico al paciente
+  - [x] "Ya fue revisada tu consulta, estoy de vuelta para seguir ayudandote"
+- [x] **7.3** Consultas sin respuesta ✅
+  - [x] Cron diario (13:00): detecta conversaciones donde ultimo msg fue del user hace >24h
+  - [x] Envia alerta WhatsApp al admin con lista de conversaciones afectadas
+  - [x] Dedup diario
 - [ ] **7.4** Solicitud de factura
 - [ ] **7.5** Envio de facturas PDF
 - [ ] **7.6** Archivos y estudios recibidos (radiografias, etc.)
@@ -433,7 +440,7 @@
 | 4 | Precios, Pagos y Cobros | ✅ COMPLETA |
 | 5 | Recordatorios | ✅ COMPLETA |
 | 6 | Panel Admin Custom | ✅ COMPLETA |
-| 7 | Escalado y Facturacion | ⚠️ ~15% |
+| 7 | Escalado y Facturacion | ⚠️ ~60% (falta facturacion) |
 | 8 | Testing y Go-Live | ❌ Bloqueado por 0.1 |
 
 ## Que bloquea el Go-Live

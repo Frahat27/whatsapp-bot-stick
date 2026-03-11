@@ -921,7 +921,7 @@ class TestScheduler:
 
     @pytest.mark.asyncio
     async def test_scheduler_starts_with_jobs(self):
-        """scheduler_enabled=True → 8 jobs registrados."""
+        """scheduler_enabled=True → 9 jobs registrados."""
         from src.services.scheduler import start_scheduler, stop_scheduler
         import src.services.scheduler as sched_module
 
@@ -941,7 +941,7 @@ class TestScheduler:
 
         scheduler = sched_module._scheduler
         assert scheduler is not None
-        assert len(scheduler.get_jobs()) == 8
+        assert len(scheduler.get_jobs()) == 9
 
         job_ids = [j.id for j in scheduler.get_jobs()]
         assert "appointment_reminders" in job_ids
@@ -950,6 +950,7 @@ class TestScheduler:
         assert "birthday_greetings" in job_ids
         assert "aligner_reminders" in job_ids
         assert "google_review_requests" in job_ids
+        assert "unanswered_queries" in job_ids
         assert "en_curso_sin_turno" in job_ids
         assert "conversation_cleanup" in job_ids
 

@@ -525,6 +525,41 @@ CREAR_TAREA_PENDIENTE = {
     },
 }
 
+ESCALAR_CONVERSACION = {
+    "name": "escalar_conversacion",
+    "description": (
+        "Escala la conversacion a un agente humano (Franco/Cynthia). "
+        "Usar cuando: queja/insatisfaccion, mas de 2 mensajes sin avanzar, "
+        "caso clinico complejo, paciente pide hablar con una persona, "
+        "problema con alineadores que no se puede resolver. "
+        "Envia notificacion WhatsApp al admin y cambia el estado a ESCALATED. "
+        "Sofia DEJA de responder hasta que el admin tome control."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "motivo": {
+                "type": "string",
+                "description": (
+                    "Motivo de la escalacion: resumen breve de por que "
+                    "se escala (ej: 'Paciente insatisfecha con el resultado de alineadores')"
+                ),
+            },
+            "paciente": {
+                "type": "string",
+                "description": "Nombre del paciente",
+                "default": "",
+            },
+            "telefono": {
+                "type": "string",
+                "description": "Telefono WhatsApp del paciente",
+                "default": "",
+            },
+        },
+        "required": ["motivo"],
+    },
+}
+
 # =============================================================================
 # LISTA COMPLETA DE TOOLS
 # =============================================================================
@@ -550,6 +585,8 @@ ALL_TOOLS = [
     REGISTRAR_PAGO,
     # Tareas
     CREAR_TAREA_PENDIENTE,
+    # Escalacion
+    ESCALAR_CONVERSACION,
 ]
 
 # Set de nombres para validación rápida

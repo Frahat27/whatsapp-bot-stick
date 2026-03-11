@@ -123,7 +123,21 @@ async def start_scheduler() -> None:
         max_instances=1,
     )
 
-    # Job 7: Alerta admin — pacientes EN CURSO sin turno (diario a las 12:00)
+    # Job 7: Consultas sin respuesta (diario a las 13:00)
+    _scheduler.add_job(
+        _run_unanswered_queries,
+        trigger=CronTrigger(
+            hour=13,
+            minute=0,
+            timezone=_TZ_ARG,
+        ),
+        id="unanswered_queries",
+        name="Alerta consultas sin respuesta >24h",
+        replace_existing=True,
+        max_instances=1,
+    )
+
+    # Job 8: Alerta admin — pacientes EN CURSO sin turno (diario a las 12:00)
     _scheduler.add_job(
         _run_en_curso_sin_turno,
         trigger=CronTrigger(
@@ -203,6 +217,12 @@ async def _run_google_review_requests() -> None:
     """Wrapper: adquiere Redis lock, luego delega al reminder service."""
     from src.services.reminder_service import process_google_review_requests
     await _run_with_lock("job:google_review_requests", process_google_review_requests)
+
+
+async def _run_unanswered_queries() -> None:
+    """Wrapper: detecta conversaciones donde el paciente espera respuesta >24h."""
+    from src.services.reminder_service import process_unanswered_queries
+    await _run_with_lock("job:unanswered_queries", process_unanswered_queries)
 
 
 async def _run_en_curso_sin_turno() -> None:
